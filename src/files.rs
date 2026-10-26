@@ -166,7 +166,7 @@ fn json_block(b: &Value) -> Block {
         }
     };
     let file_line = b["_srcLine"].as_u64().map(|l| l as usize);
-    Block { kind, line: 0, included: true, file_line }
+    Block { kind, line: 0, included: true, file_line, text: None }
 }
 
 /// `reloadIncludeBlocks` / `reloadIncBinBlocks` / `reloadSidBlocks` over the top-level program (as in

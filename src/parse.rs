@@ -140,6 +140,39 @@ pub enum Kind {
     Unsupported { what: String },
 }
 
+impl Kind {
+    /// `_MACRO_RELINE`: a library macro whose arguments are parsed into fields of their own
+    pub fn reparsed_in_macro(&self) -> bool {
+        matches!(
+            self,
+            Kind::SetColor { .. }
+                | Kind::SpriteInit { .. }
+                | Kind::SpritePos { .. }
+                | Kind::SpriteCol { .. }
+                | Kind::SpriteAnim { .. }
+                | Kind::Joystick { .. }
+                | Kind::Mouse { .. }
+                | Kind::BoxHit { .. }
+                | Kind::ScoreBcd { .. }
+                | Kind::WaitRaster { .. }
+                | Kind::TurboSet { .. }
+                | Kind::MemCpy { .. }
+                | Kind::MemSet { .. }
+                | Kind::MapCopy { .. }
+                | Kind::MapCopy16 { .. }
+                | Kind::Reu { .. }
+                | Kind::IrqSetup { .. }
+                | Kind::LoadFile { .. }
+                | Kind::Delay { .. }
+                | Kind::Rand { .. }
+                | Kind::ExoDecrunch { .. }
+                | Kind::SidPlayer { .. }
+                | Kind::CharDef { .. }
+                | Kind::Text { .. }
+        )
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemOp {
     String,
@@ -158,6 +191,9 @@ pub struct Block {
     pub included: bool,
     /// the line in its included file (the app's `_srcLine` of an included block), for the `.dbg`
     pub file_line: Option<usize>,
+    /// the code of its source line (`_macroLine`): a library macro with fields of its own is parsed
+    /// again from it inside a macro body, the parameters filled in
+    pub text: Option<String>,
 }
 
 macro_rules! regex {
@@ -921,7 +957,7 @@ pub fn parse_expert_text(text: &str) -> Vec<Block> {
     let mut rt_repeat: Vec<String> = Vec::new();
     let mut rt_count = 0usize;
     for (n, raw_line) in lines.iter().enumerate() {
-        let push = |blocks: &mut Vec<Block>, kind: Kind| blocks.push(Block { kind, line: n, included: false, file_line: None });
+        let push = |blocks: &mut Vec<Block>, kind: Kind| blocks.push(Block { kind, line: n, included: false, file_line: None, text: None });
         let (code, comment) = split_comment(raw_line);
         let line = code.trim();
         if line.is_empty() {
@@ -1147,12 +1183,17 @@ pub fn parse_expert_text(text: &str) -> Vec<Block> {
         }
         blocks.extend(delegated);
     }
+    for b in blocks.iter_mut() {
+        if b.kind.reparsed_in_macro() {
+            b.text = lines.get(b.line).map(|l| split_comment(l).0.trim().to_string());
+        }
+    }
     blocks
 }
 
 /// One code line through the `parseAsmText` rules (the comment is already split off).
 fn parse_asm_line(line: &str, comment: &str, n: usize) -> Vec<Block> {
-    let b = |kind: Kind| Block { kind, line: n, included: false, file_line: None };
+    let b = |kind: Kind| Block { kind, line: n, included: false, file_line: None, text: None };
     if let Some(c) = regex!(&format!(r"(?i)^({LABEL_NAME}):\s*\.word\s+(.+)$")).captures(line) {
         return vec![b(make_label(&c[1])), b(make_word(c[2].trim()))];
     }

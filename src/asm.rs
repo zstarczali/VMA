@@ -772,7 +772,7 @@ impl Assembler {
                     let has_params = !params.trim().is_empty();
                     // a parameter-less macro is also a subroutine at its definition (JSR name)
                     if !name.is_empty() && !has_params {
-                        out.push((Block { kind: Kind::Label { name: name.clone(), offset: 0, kick_scope: false }, line: b.line, included: false, file_line: None }, Meta::default()));
+                        out.push((Block { kind: Kind::Label { name: name.clone(), offset: 0, kick_scope: false }, line: b.line, included: false, file_line: None, text: None }, Meta::default()));
                     }
                     inside = Some((name.clone(), has_params));
                     continue;
@@ -796,7 +796,7 @@ impl Assembler {
                 }
                 let fixed = !addr.is_empty();
                 let from = || Meta { include_path: Some(path.clone()), ..Meta::default() };
-                let mk = |kind: Kind| (Block { kind, line: b.line, included: false, file_line: None }, from());
+                let mk = |kind: Kind| (Block { kind, line: b.line, included: false, file_line: None, text: None }, from());
                 if fixed {
                     out.push(mk(Kind::SaveAddress));
                     out.push(mk(Kind::Org { address: format!("{:0>4}", addr.to_uppercase()) }));
@@ -930,7 +930,7 @@ impl Assembler {
                             }
                         }
                     }
-                    Kind::RtCmp { raw, .. } | Kind::LevelRow { raw, .. } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => {
+                    Kind::LevelRow { raw, .. } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => {
                         if !raw.is_empty() {
                             *raw = rewrite(raw);
                         }
@@ -954,7 +954,38 @@ impl Assembler {
                     }
                     Kind::Loop { label, .. } if locals.contains(label) => *label = format!("{label}{suffix}"),
                     Kind::Next { label, .. } if locals.contains(label) => *label = format!("{label}{suffix}"),
+                    // the runtime IF / WHILE / REPEAT labels: unique per call
+                    Kind::RtCmp { raw, target, start, .. } => {
+                        if !raw.is_empty() {
+                            *raw = rewrite(raw);
+                        }
+                        *target = format!("{target}{suffix}");
+                        if let Some(s) = start {
+                            *s = format!("{s}{suffix}");
+                        }
+                    }
+                    Kind::RtElse { else_label, end_label } | Kind::RtEndIf { else_label, end_label, .. } => {
+                        *else_label = format!("{else_label}{suffix}");
+                        *end_label = format!("{end_label}{suffix}");
+                    }
+                    Kind::RtEndw { start, end } => {
+                        *start = format!("{start}{suffix}");
+                        *end = format!("{end}{suffix}");
+                    }
+                    Kind::RtRepeat { start } => *start = format!("{start}{suffix}"),
                     _ => {}
+                }
+                // a library macro with fields of its own: its line again, parameters and locals filled in
+                if mb.kind.reparsed_in_macro() {
+                    if let Some(c) = mb.text.as_deref().and_then(|t| regex!(r"^((?:[A-Za-z_][A-Za-z0-9_.]*:\s*)?\.?[A-Za-z_][A-Za-z0-9_]*)(.*)$").captures(t)) {
+                        let args = rewrite(&c[2]);
+                        if args != c[2] {
+                            let again = crate::parse::parse_expert_text(&format!("{}{args}", &c[1]));
+                            if let Some(nb) = again.into_iter().find(|nb| std::mem::discriminant(&nb.kind) == std::mem::discriminant(&mb.kind)) {
+                                e.kind = nb.kind;
+                            }
+                        }
+                    }
                 }
                 // an included file's macro: its lines are that file's in the debugger files
                 out.push((e, Meta { from_macro: Some(name.clone()), auto_buffer: buffer, include_path: file.clone(), ..Meta::default() }));
@@ -2434,6 +2465,10 @@ fn split_macro_invoke_args(text: &str) -> Vec<String> {
 /// `normalizeMacroInvokeArg`: one pair of surrounding quotes off.
 fn normalize_macro_invoke_arg(arg: &str) -> String {
     let t = arg.trim();
+    // 'A' stays a character literal (its code), any other quoted argument loses the quotes
+    if t.starts_with('\'') && t.ends_with('\'') && t.chars().count() == 3 {
+        return t.to_string();
+    }
     if t.len() >= 2 && ((t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\''))) {
         return t[1..t.len() - 1].to_string();
     }
