@@ -1,5 +1,7 @@
 # VMA — Visual Macro Assembler
 
+Version 2.0.0.
+
 The 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler), in Rust:
 a library (`vma`) and a command-line compiler (`vma build`).
 
@@ -12,6 +14,12 @@ every library macro of the app (TEXT, PRINT, SPRITE_*, JOYSTICK, MOUSE, MEMCPY /
 runtime `.if` / `.while` / `.repeat`, DELAY, INCBIN, KOALA, SID, SID_PLAYER, LEVEL, LEVEL_ROW,
 INCLUDE …). A KickAssembler project reaches it through the app's Kick preprocessor, whose output is
 VMA text.
+
+## Manual
+
+The language manual: [English](docs/VMA-Manual.md) · [Magyar](docs/VMA-Manual.hu.md) — source format, numbers and
+expressions, addressing modes, the 6502 instructions, every directive and library macro, the KickAssembler-style
+syntax, the command line and the known limitations.
 
 ## Command line
 
