@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: vma build <input.asm> [-o out.prg] [--base-dir DIR] [--search DIR]... [--no-basic-stub] [--raw]
+                 [--crt FILE] [--crt-name NAME] [--d64 [FILE]] [--add FILE]... [--disk-name NAME]
                  [--sym FILE] [--vs FILE] [--dbg FILE] [--debug] [--json FILE]
                  [--source-path NAME] [--line-map FILE]
        vma --help | --version";
@@ -25,6 +26,16 @@ build options:
   --no-basic-stub   no `10 SYS…` BASIC line in front of the code (the app's BASIC SYS toggle)
   --raw             the image alone at its first ORG, no stub and no $C000 move (a Kick
                     project's extra output, as assembleProgramToPrg)
+  --crt FILE        a Magic Desk cartridge (CRT type 19, 8 x 8K banks, at most 65408 bytes) of
+                    the PRG, as the app's Save CRT: a loader copies the program to its load
+                    address and starts it at the SYS address; without -o no PRG is written
+  --crt-name NAME   the cartridge name in the CRT header (default: VA CART)
+  --d64 [FILE]      a 1541 disk image with the PRG on it, named after the PRG (default FILE:
+                    the PRG with a .d64 extension); no c1541 needed. Without -o no PRG is
+                    written (and the D64 is named after the input)
+  --add FILE        a further file on the disk, as it is (a PRG with its load address),
+                    named after the file (repeatable, in order)
+  --disk-name NAME  the disk's name (default: the D64's file name; ID 01)
   --sym FILE        KickAssembler label file (.label NAME=$xxxx)
   --vs FILE         VICE monitor label file (al C:xxxx .NAME; x64sc -moncommands FILE)
   --dbg FILE        RetroDebugger / C64 Debugger source map (C64debugger XML)
@@ -78,10 +89,24 @@ fn main() -> ExitCode {
     let (mut sym, mut vs, mut dbg, mut debug) = (None::<PathBuf>, None::<PathBuf>, None::<PathBuf>, false);
     let mut raw = false;
     let (mut json, mut source_path, mut line_map) = (None::<PathBuf>, None::<PathBuf>, None::<PathBuf>);
+    let (mut crt, mut crt_name) = (None::<PathBuf>, String::new());
+    // --d64 with no value: Some(empty) = next to the PRG
+    let (mut d64, mut add, mut disk_name) = (None::<PathBuf>, Vec::<PathBuf>::new(), String::new());
     let mut i = 2;
     while i < args.len() {
         let opt = args[i].as_str();
-        let takes_value = matches!(opt, "-o" | "--base-dir" | "--search" | "--sym" | "--vs" | "--dbg" | "--json" | "--source-path" | "--line-map");
+        if opt == "--d64" {
+            match args.get(i + 1).filter(|v| !v.starts_with('-')) {
+                Some(v) => {
+                    d64 = Some(PathBuf::from(v));
+                    i += 1;
+                }
+                None => d64 = Some(PathBuf::new()),
+            }
+            i += 1;
+            continue;
+        }
+        let takes_value = matches!(opt, "-o" | "--base-dir" | "--search" | "--sym" | "--vs" | "--dbg" | "--json" | "--source-path" | "--line-map" | "--crt" | "--crt-name" | "--add" | "--disk-name");
         let value = if takes_value {
             i += 1;
             match args.get(i) {
@@ -103,6 +128,10 @@ fn main() -> ExitCode {
             "--json" => json = value,
             "--source-path" => source_path = value,
             "--line-map" => line_map = value,
+            "--crt" => crt = value,
+            "--crt-name" => crt_name = value.map(|v| v.display().to_string()).unwrap_or_default(),
+            "--add" => add.extend(value),
+            "--disk-name" => disk_name = value.map(|v| v.display().to_string()).unwrap_or_default(),
             "--no-basic-stub" => options.basic_stub = false,
             "--help" | "-h" => {
                 println!("{HELP}");
@@ -119,7 +148,41 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    if raw && crt.is_some() {
+        return usage_error("--crt needs the PRG with its start address, not --raw");
+    }
+    // with --crt / --d64 and no -o only the cartridge / disk is written
+    let write_prg = output.is_some() || (crt.is_none() && d64.is_none());
     let out = output.unwrap_or_else(|| input.with_extension("prg"));
+    let prg_path = write_prg.then_some(&out);
+    let d64 = d64.map(|p| if p.as_os_str().is_empty() { out.with_extension("d64") } else { p });
+    let stem = |p: &Path| p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+    // the CRT / D64 of the built PRG
+    let write_media = |prg: &[u8], sys: Option<i64>| -> Result<(), ExitCode> {
+        let failed = |e: &dyn std::fmt::Display| {
+            eprintln!("{}: {e}", input.display());
+            ExitCode::from(1)
+        };
+        if let Some(path) = &crt {
+            let bytes = vma::crt::crt_of_prg(prg, sys, &crt_name).map_err(|e| failed(&e))?;
+            write(path, &bytes)?;
+        }
+        if let Some(path) = &d64 {
+            let mut disk_files: Vec<(String, Vec<u8>)> = vec![(stem(&out), prg.to_vec())];
+            for f in &add {
+                let data = std::fs::read(f).map_err(|e| {
+                    eprintln!("{}: {e}", f.display());
+                    ExitCode::from(1)
+                })?;
+                disk_files.push((stem(f), data));
+            }
+            let refs: Vec<(&str, &[u8])> = disk_files.iter().map(|(n, d)| (n.as_str(), d.as_slice())).collect();
+            let name = if disk_name.is_empty() { stem(path) } else { disk_name.clone() };
+            let bytes = vma::d64::build_d64(&name, "01", &refs).map_err(|e| failed(&e))?;
+            write(path, &bytes)?;
+        }
+        Ok(())
+    };
     if debug {
         sym = sym.or_else(|| Some(out.with_extension("sym")));
         vs = vs.or_else(|| Some(out.with_extension("vs")));
@@ -151,8 +214,11 @@ fn main() -> ExitCode {
     if raw {
         return match vma::build_raw(&source, &files) {
             Ok(built) => {
+                if let Err(code) = write_media(&built.prg, None) {
+                    return code;
+                }
                 let answer = serde_json::json!({ "ok": true, "prg": built.prg, "segments": built.segments, "entry": built.entry }).to_string();
-                let jobs: [(Option<&PathBuf>, &[u8]); 2] = [(Some(&out), &built.prg), (json.as_ref(), answer.as_bytes())];
+                let jobs: [(Option<&PathBuf>, &[u8]); 2] = [(prg_path, &built.prg), (json.as_ref(), answer.as_bytes())];
                 for (path, bytes) in jobs {
                     if let Some(p) = path {
                         if let Err(code) = write(p, bytes) {
@@ -167,7 +233,11 @@ fn main() -> ExitCode {
     }
     if sym.is_none() && vs.is_none() && dbg.is_none() && json.is_none() {
         return match vma::build_full(&source, &options, &files) {
-            Ok(built) => write(&out, &built.prg).map(|_| ExitCode::SUCCESS).unwrap_or_else(|c| c),
+            Ok(built) => prg_path
+                .map_or(Ok(()), |p| write(p, &built.prg))
+                .and_then(|_| write_media(&built.prg, built.sys_address))
+                .map(|_| ExitCode::SUCCESS)
+                .unwrap_or_else(|c| c),
             Err(e) => fail(e),
         };
     }
@@ -175,8 +245,11 @@ fn main() -> ExitCode {
     match vma::build_result(&source, &options, &files, &source_path, line_map.as_deref()) {
         Ok(result) => {
             let answer = json.as_ref().map(|_| result.to_json().to_string()).unwrap_or_default();
+            if let Err(code) = write_media(&result.built.prg, result.built.sys_address) {
+                return code;
+            }
             let jobs: [(Option<&PathBuf>, &[u8]); 5] = [
-                (Some(&out), &result.built.prg),
+                (prg_path, &result.built.prg),
                 (sym.as_ref(), result.debug.sym.as_bytes()),
                 (vs.as_ref(), result.debug.vs.as_bytes()),
                 (dbg.as_ref(), result.debug.dbg.as_bytes()),

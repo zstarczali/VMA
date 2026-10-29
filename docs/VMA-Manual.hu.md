@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.0.0-s verzió**
+**Nyelvi kézikönyv · 2.1.0-s verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -89,6 +89,16 @@ tevő direktíva (`.rawbytes`, `.incbin`, `.sid` …) egy képbe kerül; a közt
 - A saját BASIC SYS sorral kezdődő forrás (`.byte $0B, $08, $0A, $00, $9E, …` a `$0801`-en) változatlanul kerül a
   PRG-be, második stub nélkül.
 
+A PRG-ből a parancssor **cartridge**-et és **lemezképet** is készít (2.1.0-tól, lásd
+[8. Parancssor](#8-parancssor)):
+
+- `--crt FÁJL` — Magic Desk cartridge (CRT 19-es típus, 8 × 8K bank, legfeljebb 65 408 bájt program). A 0. bank
+  loadere inicializálja a KERNAL-t, majd a RAM-ban, a `$0100–$013B` területen futó másoló rutin a betöltési címére
+  másolja a programot (a `$DE00`-n keresztül bankot váltva), kikapcsolja a cartridge-et és a belépési pontra ugrik.
+  A program ne essen a `$0100–$013B` területre, se a loader által használt `$02–$04` / `$FB–$FE` zero page bájtokra.
+- `--d64 [FÁJL]` — 1541-es lemezkép (35 sáv) a PRG-vel a saját nevén, és a `--add` fájlokkal, úgy elrendezve,
+  ahogy az 1541 DOS írja; c1541 nem kell.
+
 ---
 
 ## 4. Címzési módok
@@ -110,6 +120,14 @@ Minden 6502 utasítás egy vagy több címzési módot támogat. A VMA az operan
 | **indirectY** | Indirect,Y | `LDA ($FB),Y` | Zero page indirekt indexelt (operandus = zero page cím, 1 byte) |
 | **indirect** | Indirect | `JMP ($0100)` | Indirekt; csak JMP-vel használható |
 
+### Konstansok a zero page-en
+
+A csak konstansokból (`.const`, `név = érték`, `.var`) álló, egy bájtba férő operandus az utasítás **zero page**
+módját kapja, pontosan úgy, mint maga a szám: `.const zp = $FB` után az `lda zp` `A5 FB` lesz (2 bájt, 3 ciklus),
+az `lda zp,x` pedig `B5 FB`. Ha az utasításnak nincs zero page változata az adott módban, abszolút marad
+(`lda zp,y` → `B9 FB 00`). Címkére nem szűkít — a címe csak az elrendezés után ismert —, az `lda.abs zp` pedig
+kikényszeríti az abszolút módot. A szám megtartja a leírt szélességét: a `$FB` zero page, a `$00FB` abszolút. *(Új a 2.1-ben.)*
+
 ### Címke-kifejezések operandusként
 
 Bármely operandus, amely címet vagy immediate értéket elfogad, közvetlenül elfogad egy **konstans nevet** is (`.const`-ot vagy címkét). Ezen felül **címke+offset** vagy **címke−offset** kifejezésekkel hivatkozhatsz egy nevesített konstanshoz képesti címre:
@@ -120,6 +138,8 @@ Bármely operandus, amely címet vagy immediate értéket elfogad, közvetlenül
 | `label+$hex` | `STA screen_ram+$0100,X` | Címke-cím plusz hex offset |
 | `label+decimal` | `STA screen_ram+256,X` | Címke-cím plusz decimális offset |
 | `label-$hex` | `LDA table-$10` | Címke-cím mínusz hex offset |
+| `$hexa+kifejezés` | `LDA $1234+1`, `STA $0400+40*2,X` | Számokból, címkékből és konstansokból álló bármely kifejezés *(2.1)* |
+| `(címke)` | `JMP (vector)`, `JMP (table+2)` | Indirekt ugrás címkén vagy kifejezésen át *(2.1)* |
 | `#<label` | `LDA #<screen_ram` | A címke-cím alsó byte-ja |
 | `#>label` | `LDA #>screen_ram` | A címke-cím felső byte-ja |
 | `*` | `BNE *` | Aktuális program counter (az utasítás saját címe); `*`-gal az elágazások végtelen önhurkot generálnak (offset `$FE`) |
@@ -606,6 +626,8 @@ Mint egy **POKE hurok** — nyers byte-ok listáját írja egy memóriacímre fu
 
 **Méret:** `byte_count × 5` byte (egy LDA + egy STA byte-onként).
 
+> **2.1:** a bájtok címkét is nevezhetnek: a `.data $2010, <target, >target` a `target` címét írja, később definiált címkéét is. A makró `:név` címkéje olyan célcímre is mutathat, amely maga is címke.
+
 ---
 
 ### RAWBYTES
@@ -628,6 +650,8 @@ Mint a **DATA, amely közvetlenül a memóriába töltődik** — egyáltalán n
 **Méret a kódban:** 0 byte. Az adat a megadott címre kerül a kimenetben.
 
 > **DATA vs RAWBYTES:** a DATA LDA/STA kódot generál, amely futásidőben másolja a byte-okat (lassabb, de működik, ha az adatnak dinamikusnak kell lennie). A RAWBYTES egyszerűen elhelyezi a byte-okat — nincs kód, azonnali, nulla költség.
+
+> **2.1:** a bájtok címkét is nevezhetnek (`.rawbytes $2000, <target, >target` — pointertábla); a `:név` címke célcíme lehet címke, később definiált is. Makró puffer-argumentumaként a bájtok saját helyet kapnak a program utáni pufferekben.
 
 ---
 
@@ -1127,6 +1151,8 @@ Kétféle fájl támogatott:
 
 > **Tipp:** használd az INCLUDE-ot újrahasználható szubrutin-könyvtárak építésére, amelyeket megoszthatsz projektek közt. Az `.inc`/`.asm`/`.s` fájlok akkor a legjobbak, ha sima szövegszerkesztőben akarod szerkeszteni a könyvtárat, vagy más 6502 assemblerekkel megosztani; a `.json` akkor, ha a könyvtár Visual Assembler blokkprogram. Állíts be betöltési címet, ha a könyvtárnak nincs saját ORG-ja, vagy ha felül akarod írni az alapértelmezett elhelyezését.
 
+> **2.1:** a nem található include hiba, és az is, ha egy fájl önmagát emeli be (közvetlenül vagy mélyebben). A beemelt fájl saját `.include`, `.incbin` és `.sid` sorai is betöltődnek a saját mappájához képest, és a makróhívásai is kibomlanak — legfeljebb 16 szint mélyen.
+
 ---
 
 ### TABLE
@@ -1462,6 +1488,8 @@ A makró teste inline kifejtődik, a `{paramName}` a tényleges argumentumokra c
 - **Vegyes**: `#$07, "hello", $20` — bármely kombináció
 
 > **Tipp:** definiáld a makrókat a programod tetején (vagy alján), majd INVOKE-old őket, ahol szükséges. A makrók többször is meghívhatók különböző argumentumokkal.
+
+> **2.1:** egy makró másik makrót is hívhat (a `both(a, b)` a `setc(a)`-t); a belső hívás a külső hívás argumentumait kapja, saját egyedi lokális címkékkel. Az önmagát hívó makró 16 szint után hibával áll meg, nem akad el.
 
 ---
 
@@ -1816,6 +1844,8 @@ Mint **kis memória-rutinok, amelyekhez folyton nyúlsz** — a `MEMCPY` egy ös
 
 A 256 byte-ig terjedő méretek rövid 8 bites hurkot használnak. A nagyobb méretek automatikusan 16 bites számlálóra váltanak.
 
+> **2.1:** a méretet már a kód elrendezésekor ismerni kell — szám vagy konstans. A később definiált címke (amelynek értékét az elrendezés még nem ismeri) hiba, nem a helyére nem férő kód.
+
 ---
 
 ### PRINT / PRINT_CHAR / PRINT_HEX / CLEAR_SCREEN / WAIT_KEY / DELAY / SET_BORDER / SET_BG
@@ -2101,6 +2131,8 @@ skip_right:
 ---
 
 <a id="mouse"></a>
+
+> **2.1:** a portot már a kód elrendezésekor ismerni kell (szám vagy konstans), mert a 3-as port 3 bájttal hosszabb kódot ad; a később definiált címke hiba.
 ### MOUSE
 
 Beolvas egy Commodore 1351 arányos egeret, és mozgat egy sprite-ot. Teljesen **inline** — nem kell JSR vagy címke. A makró kiválasztja a CIA portot, megvárja, míg a SID paddle bemenetek beállnak, majd dekódolja a delta mozgást a szabványos 1351 driver mintával, és alkalmazza a sprite regiszterekre.
@@ -2778,6 +2810,8 @@ VMA szöveggé alakít.
 
 ## 8. Parancssor
 
+Új a 2.1.0-ban: `--crt` / `--crt-name` (cartridge) és `--d64` / `--add` / `--disk-name` (lemezkép).
+
 ```
 vma build <input.asm> [kapcsolók]
 vma --help
@@ -2791,6 +2825,11 @@ vma --version
 | `--search MAPPA` | További keresési mappa a base dir után (ismételhető, sorrendben); a más gépen írt útvonal a puszta fájlnévre esik vissza |
 | `--no-basic-stub` | Nincs `10 SYS…` BASIC sor a kód előtt |
 | `--raw` | Csak a memóriakép az első ORG-on: nincs stub, nincs `$C000`-ra tolás |
+| `--crt FÁJL` | Magic Desk cartridge (CRT 19-es típus, 8 × 8K bank, legfeljebb 65 408 bájt): egy loader a betöltési címére másolja a programot, és a SYS címen indítja — a Visual Assembler Build CRT-je. `-o` nélkül nem ír PRG-t |
+| `--crt-name NÉV` | A cartridge neve a CRT fejlécében (alapból `VA CART`) |
+| `--d64 [FÁJL]` | 1541-es lemezkép a PRG-vel, a PRG nevén (alapból a PRG `.d64` kiterjesztéssel); c1541 nem kell. `-o` nélkül nem ír PRG-t |
+| `--add FÁJL` | További fájl a lemezre változatlanul (PRG a betöltési címével), a fájl nevén (ismételhető, sorrendben) |
+| `--disk-name NÉV` | A lemez neve (alapból a D64 fájl neve; ID `01`) |
 | `--sym FÁJL` | KickAssembler címkefájl (`.label NÉV=$xxxx`) |
 | `--vs FÁJL` | VICE monitor címkefájl (`al C:xxxx .NÉV`; `x64sc -moncommands FÁJL`) |
 | `--dbg FÁJL` | RetroDebugger / C64 Debugger forrástérkép (XML) |
@@ -2805,6 +2844,8 @@ Kilépési kód: `0` lefordult, `1` fordítási hiba (`FÁJL:SOR: üzenet` a sta
 ```
 vma build game.asm -o game.prg --debug
 vma build game.asm --no-basic-stub --search ../assets
+vma build game.asm --crt game.crt                    # csak a cartridge
+vma build game.asm --d64 --add music.prg             # game.d64 a GAME és MUSIC fájlokkal
 ```
 
 ## 9. Ismert korlátok
@@ -2812,19 +2853,14 @@ vma build game.asm --no-basic-stub --search ../assets
 A VMA bájtra azonosan hozza a C64 Visual Assembler fordítóját, az egyenetlenségeivel együtt:
 
 - `lda.zp c` → `LDA $0C`: a `.zp` ág a hexa-jegyekből álló szimbólumnevet számnak veszi.
-- A `JMP (címke)` hiba — az indirekt mód csak `($hhhh)` alakot ismer.
-- Az `lda $1234+1` hiba: a `$`-ral kezdődő kifejezés nem megy át az operandus-ellenőrzésen (írd `lda címke+1`-nek).
-- A zero-page címet tartalmazó `.const`-tól az utasítás nem lesz zero-page: `.const zp = $FB` után az `lda zp`
-  abszolút (`AD FB 00`); írd `lda.zp zp`-nek (vagy `lda $FB`-nek).
 - A paraméter nélküli makró törzse a definíció helyén is lefordul; az első `* =` előtti definíció a program elejére kerül.
-- Makrótörzsben a makróhívás nincs kibontva (hiba).
-- A feloldatlan TURBO_SET sebesség 0-val fordul; a SPRITE_ANIM feloldatlan sprite-száma / ZP-számlálója 0.
 - A `.text X, Y, "s", 80` elemzi a karakter-eltolást, de nem használja.
-- A `.data` / `.rawbytes` bájtjai címkék nélkül értékelődnek ki; a `.chardef` bájtjai hexák (`129` = `$129`, hiba).
-- Az adatmakrók címkéje (`:név`) `$C000`-t ad, ha a célcím címke.
-- A JOYSTICK és a MEMCPY / MEMSET mérete címkék nélkül számolódik, a bájtok címkékkel: címkés 3-as port vagy méret
-  esetén a méret eltérhet a kódtól.
+- A `.chardef` bájtjai hexák (`129` = `$129`, hiba).
 - A futásidejű `.if` / `.while` / `.until` nem immediate operandusa címként olvasódik: a `%bin` hiba, a `10` hexa (`$0010`).
 - A DELAY segédrutin a layout utolsó sora és minden adatszakasz után kerül — kihagyott (`.if 0`) DELAY esetén is.
-- A makró automatikus puffere `.data` / `.rawbytes` esetén 0 bájtot foglal, így a következő puffer felülírhatja.
-- A nem található include nem hiba, és a beemelt fájl saját `.incbin` / `.sid` / `.include` sorai nem töltődnek be.
+
+A 2.1-ben javítva (korábban rossz kódot adtak vagy hibára futottak): a zero page `.const` / `.var` operandus, a
+`JMP (címke)`, az `lda $1234+1`, a makróban hívott makró, a feloldatlan TURBO_SET / SPRITE_ANIM érték (most hiba),
+a címkék a `.data` / `.rawbytes` bájtjaiban, a címkére mutató `:név` címke, a JOYSTICK / MEMCPY / MEMSET mérete
+később definiált címkéből (most hiba), a `.data` / `.rawbytes` automatikus puffere, és az include-ok (a hiányzó
+hiba, a beemelt fájl saját `.include` / `.incbin` / `.sid` sorai betöltődnek).

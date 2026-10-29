@@ -5,6 +5,8 @@
 //! output: tests/vma-golden.test.js runs the `vma` CLI over the golden corpus.
 
 pub mod asm;
+pub mod crt;
+pub mod d64;
 pub mod debug;
 pub mod expr;
 pub mod files;

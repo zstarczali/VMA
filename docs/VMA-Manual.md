@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.0.0**
+**Language manual · version 2.1.0**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -90,6 +90,16 @@ gaps between them are zeros.
 - A source that begins with its own BASIC SYS line (`.byte $0B, $08, $0A, $00, $9E, …` at `$0801`) is emitted
   as it is, without a second stub.
 
+From the PRG the command line also makes a **cartridge** and a **disk image** (new in 2.1.0, see
+[8. Command line](#8-command-line)):
+
+- `--crt FILE` — a Magic Desk cartridge (CRT type 19, 8 × 8K banks, at most 65 408 bytes of program). A loader in
+  bank 0 initialises the KERNAL, runs a copy routine from RAM at `$0100–$013B` that moves the program to its load
+  address (switching banks through `$DE00`), turns the cartridge off and jumps to the entry point. Keep the program
+  out of `$0100–$013B` and the zero page bytes `$02–$04` / `$FB–$FE` the loader uses.
+- `--d64 [FILE]` — a 1541 disk image (35 tracks) with the PRG named after it, plus the `--add` files, laid out as
+  the 1541 DOS writes them; no c1541 needed.
+
 ---
 
 ## 4. Addressing modes
@@ -111,6 +121,14 @@ Each 6502 instruction supports one or more addressing modes. VMA picks the mode 
 | **indirectY** | Indirect,Y | `LDA ($FB),Y` | Zero page indirect indexed (operand = zero page address, 1 byte) |
 | **indirect** | Indirect | `JMP ($0100)` | Indirect; only usable with JMP |
 
+### Constants in the zero page
+
+An operand made of constants only (`.const`, `name = value`, a `.var`) that fits in a byte takes the instruction's
+**zero-page** mode, exactly as the number would: after `.const zp = $FB`, `lda zp` assembles to `A5 FB` (2 bytes,
+3 cycles) and `lda zp,x` to `B5 FB`. A mode the instruction has no zero-page form of stays absolute (`lda zp,y` →
+`B9 FB 00`). A label is not narrowed — its address is known only after the layout — and `lda.abs zp` forces the
+absolute mode. A number keeps the width it is written with: `$FB` is zero page, `$00FB` absolute. *(New in 2.1.)*
+
 ### Label expressions as operands
 
 Any operand that accepts an address or immediate value also accepts a **constant name** (a `.const` or a label) directly. Additionally, you can use **label+offset** or **label−offset** expressions to reference an address relative to a named constant:
@@ -121,6 +139,8 @@ Any operand that accepts an address or immediate value also accepts a **constant
 | `label+$hex` | `STA screen_ram+$0100,X` | Label address plus a hex offset |
 | `label+decimal` | `STA screen_ram+256,X` | Label address plus a decimal offset |
 | `label-$hex` | `LDA table-$10` | Label address minus a hex offset |
+| `$hex+expr` | `LDA $1234+1`, `STA $0400+40*2,X` | Any expression of numbers, labels and constants *(2.1)* |
+| `(label)` | `JMP (vector)`, `JMP (table+2)` | Indirect jump through a label or an expression *(2.1)* |
 | `#<label` | `LDA #<screen_ram` | Low byte of the label address |
 | `#>label` | `LDA #>screen_ram` | High byte of the label address |
 | `*` | `BNE *` | Current program counter (the instruction's own address); branches with `*` generate an infinite self-loop (offset `$FE`) |
@@ -607,6 +627,8 @@ Like a **POKE loop** — writes a list of raw bytes to a memory address at runti
 
 **Size:** `byte_count × 5` bytes (one LDA + one STA per byte).
 
+> **2.1:** the bytes may name labels: `.data $2010, <target, >target` writes the address of `target`, also of a label defined later. The `:name` label of the macro may point at a target address that is itself a label.
+
 ---
 
 ### RAWBYTES
@@ -629,6 +651,8 @@ Like **DATA that loads directly into memory** — no runtime code at all. The by
 **Size in code:** 0 bytes. The data is placed at the given address in the output.
 
 > **DATA vs RAWBYTES:** DATA generates LDA/STA code that copies bytes at runtime (slower, but works if the data needs to be dynamic). RAWBYTES just places the bytes directly — no code, instant, zero cost.
+
+> **2.1:** the bytes may name labels (`.rawbytes $2000, <target, >target` — a pointer table); the `:name` label may point at a label as the target address, also one defined later. As a macro's buffer argument, the bytes take their own space in the buffers after the program.
 
 ---
 
@@ -1126,6 +1150,8 @@ Two file kinds are supported:
 
 > **Tip:** Use INCLUDE to build reusable subroutine libraries that you can share across projects. `.inc`/`.asm`/`.s` files are best when you want to edit the library in a plain text editor or share it with other 6502 assemblers; `.json` when the library is a Visual Assembler block program. Set a load address when the library has no ORG of its own, or when you want to override its default placement.
 
+> **2.1:** an include that is not found is an error, and so is a file that includes itself (directly or further down). An included file's own `.include`, `.incbin` and `.sid` lines are loaded too, relative to its own folder, and its macro calls are expanded — up to 16 levels deep.
+
 ---
 
 ### TABLE
@@ -1463,6 +1489,8 @@ The macro body is expanded inline with `{paramName}` replaced by the actual argu
 - **Mixed**: `#$07, "hello", $20` — any combination
 
 > **Tip:** Define macros at the top (or bottom) of your program, then INVOKE them wherever needed. Macros can be invoked multiple times with different arguments.
+
+> **2.1:** a macro may call another macro (`both(a, b)` calling `setc(a)`); the inner call gets the outer call's arguments and its own unique local labels. A macro that calls itself stops with an error after 16 levels instead of hanging.
 
 ---
 
@@ -1817,6 +1845,8 @@ Like **small memory routines you reach for constantly** — `MEMCPY` copies a co
 
 Sizes up to 256 bytes use a short 8-bit loop. Larger sizes switch to a 16-bit counter automatically.
 
+> **2.1:** the size must be known when the code is laid out — a number or a constant. A label defined later (whose value the layout does not know yet) is an error instead of code that does not fit its place.
+
 ---
 
 ### PRINT / PRINT_CHAR / PRINT_HEX / CLEAR_SCREEN / WAIT_KEY / DELAY / SET_BORDER / SET_BG
@@ -2102,6 +2132,8 @@ skip_right:
 ---
 
 <a id="mouse"></a>
+
+> **2.1:** the port must be known when the code is laid out (a number or a constant), because port 3 makes the code 3 bytes longer; a label defined later is an error.
 ### MOUSE
 
 Reads a Commodore 1351 proportional mouse and moves a sprite. Entirely **inline** — no JSR or label needed. The macro selects the CIA port, waits for the SID paddle inputs to settle, then decodes the delta movement using the standard 1351 driver pattern and applies it to the sprite registers.
@@ -2778,6 +2810,8 @@ source tree into VMA text.
 
 ## 8. Command line
 
+New in 2.1.0: `--crt` / `--crt-name` (cartridge) and `--d64` / `--add` / `--disk-name` (disk image).
+
 ```
 vma build <input.asm> [options]
 vma --help
@@ -2791,6 +2825,11 @@ vma --version
 | `--search DIR` | A further folder to look in, after the base dir (repeatable, in order); a path written on another machine falls back to its bare file name |
 | `--no-basic-stub` | No `10 SYS…` BASIC line in front of the code |
 | `--raw` | The image alone at its first ORG: no stub, no move to `$C000` |
+| `--crt FILE` | A Magic Desk cartridge (CRT type 19, 8 × 8K banks, at most 65 408 bytes): a loader copies the program to its load address and starts it at the SYS address — the Visual Assembler's Build CRT. Without `-o` no PRG is written |
+| `--crt-name NAME` | The cartridge name in the CRT header (default: `VA CART`) |
+| `--d64 [FILE]` | A 1541 disk image with the PRG on it, named after the PRG (default FILE: the PRG with a `.d64` extension); no c1541 needed. Without `-o` no PRG is written |
+| `--add FILE` | A further file on the disk as it is (a PRG with its load address), named after the file (repeatable, in order) |
+| `--disk-name NAME` | The disk name (default: the D64's file name; ID `01`) |
 | `--sym FILE` | KickAssembler label file (`.label NAME=$xxxx`) |
 | `--vs FILE` | VICE monitor label file (`al C:xxxx .NAME`; `x64sc -moncommands FILE`) |
 | `--dbg FILE` | RetroDebugger / C64 Debugger source map (XML) |
@@ -2804,6 +2843,8 @@ Exit status: `0` built, `1` compile error (`FILE:LINE: message` on standard erro
 ```
 vma build game.asm -o game.prg --debug
 vma build game.asm --no-basic-stub --search ../assets
+vma build game.asm --crt game.crt                    # the cartridge only
+vma build game.asm --d64 --add music.prg             # game.d64 with GAME and MUSIC
 ```
 
 ## 9. Known limitations
@@ -2811,22 +2852,17 @@ vma build game.asm --no-basic-stub --search ../assets
 VMA reproduces the C64 Visual Assembler compiler byte for byte, its rough edges included:
 
 - `lda.zp c` → `LDA $0C`: with `.zp` a symbol made of hex digits is read as a number.
-- `JMP (label)` is an error — the indirect mode takes `($hhhh)` only.
-- `lda $1234+1` is an error: an expression starting with `$` does not pass the operand check (write `lda label+1`).
-- A `.const` that holds a zero-page address does not make an instruction zero-page: `.const zp = $FB` then
-  `lda zp` assembles absolute (`AD FB 00`); write `lda.zp zp` (or `lda $FB`).
 - The body of a parameter-less macro is also assembled where it is defined; a definition before the first `* =`
   lands at the start of the program.
-- A macro call inside a macro body is not expanded (an error).
-- An unresolved TURBO_SET speed compiles as 0; an unresolved SPRITE_ANIM sprite number / zero-page counter as 0.
 - `.text X, Y, "s", 80` parses the character offset but does not use it.
-- The bytes of `.data` / `.rawbytes` are evaluated without labels; the bytes of `.chardef` are hex (`129` = `$129`, an error).
-- The label of a data macro (`:name`) uses `$C000` when its target address is a label.
-- The size of JOYSTICK and MEMCPY / MEMSET is counted without labels, the bytes with labels: a labelled port 3
-  or size can make the size differ from the code.
+- The bytes of `.chardef` are hex (`129` = `$129`, an error).
 - The non-immediate operand of a runtime `.if` / `.while` / `.until` is read as an address: `%bin` is an error and
   `10` is hex (`$0010`).
 - The DELAY helper routine goes after the last line of the layout and every data section — even for a skipped
   (`.if 0`) DELAY.
-- A macro's automatic buffer is 0 bytes for `.data` / `.rawbytes`, so the next buffer can overwrite it.
-- A missing include is not an error, and an included file's own `.incbin` / `.sid` / `.include` lines are not loaded.
+
+Fixed in 2.1 (they gave wrong code or failed before): a `.const` / `.var` operand in the zero page, `JMP (label)`,
+`lda $1234+1`, a macro call inside a macro, an unresolved TURBO_SET / SPRITE_ANIM value (now an error), labels in
+the bytes of `.data` / `.rawbytes`, a `:name` label whose target is a label, the size of JOYSTICK / MEMCPY / MEMSET
+from a later label (now an error), the automatic buffer of `.data` / `.rawbytes`, and the includes (a missing one is
+an error, an included file's own `.include` / `.incbin` / `.sid` are loaded).
