@@ -54,7 +54,8 @@ pub enum Kind {
     AnonLabel,
     KickScopeEnd,
     /// `display` = the block's `operand` (a macro expansion re-parses the instruction from it)
-    Instr { mnem: String, mode: Mode, raw: String, base: Base, display: String, smc: Option<String> },
+    /// `force_abs`: `lda.abs zp` — absolute even when the constant fits in a byte (the zero-page narrowing)
+    Instr { mnem: String, mode: Mode, raw: String, base: Base, display: String, smc: Option<String>, force_abs: bool },
     LongBranch { mnem: String, cond: String, raw: String },
     Byte { raw: String, base: Base, error: Option<Msg> },
     Word { raw: String, base: Base },
@@ -129,7 +130,8 @@ pub enum Kind {
     LevelRow { raw: String, syntax_ok: bool },
     /// `.include "f"[, $addr]`: `blocks` filled by `files::load_assets`; `addr` = hex digits or empty
     /// `path` = where the file was found (the app's `includeFile` after a reload)
-    Include { file: String, addr: String, blocks: Vec<Block>, path: String },
+    /// `error`: not found / includes itself (`files::load_assets`) — a build error
+    Include { file: String, addr: String, blocks: Vec<Block>, path: String, error: Option<Msg> },
     /// the address cursor saved before / restored after an include at its own address
     SaveAddress,
     RestoreAddress,
@@ -577,6 +579,11 @@ pub fn make_instruction(mnemonic: &str, operand_raw: &str) -> Kind {
             mode = Mode::Indirect;
             raw = c[1].to_uppercase();
             display = format!("(${raw})");
+        } else if mnem == "JMP" && paren_wraps_all(&op) {
+            // JMP (label) / JMP (vectors+2): indirect through a label or an expression
+            raw = op[1..op.len() - 1].trim().to_string();
+            mode = Mode::Indirect;
+            display = format!("({raw})");
         } else if let Some(c) = regex!(r"(?i)^\$([0-9A-Fa-f]+),X$").captures(&op) {
             raw = c[1].to_uppercase();
             mode = wide_or(&raw, Mode::AbsoluteX, Mode::ZeroPageX);
@@ -624,6 +631,12 @@ pub fn make_instruction(mnemonic: &str, operand_raw: &str) -> Kind {
             base = Base::Dec;
             mode = if branch { Mode::Relative } else if js_parse_int(&op, 10) > 255.0 { Mode::Absolute } else { Mode::ZeroPage };
             display = op.clone();
+        } else if !branch && regex!(r"(?i)^[^()]+,[XY]$").is_match(&op) {
+            // any other expression indexed by X / Y ($1234+1,X, table+2*8,Y): absolute, resolved at compile time
+            let index = op[op.len() - 1..].to_uppercase();
+            raw = op[..op.rfind(',').unwrap()].trim().to_string();
+            mode = if index == "X" { Mode::AbsoluteX } else { Mode::AbsoluteY };
+            display = format!("{raw},{index}");
         } else {
             raw = op.clone();
             mode = if branch { Mode::Relative } else { Mode::Absolute };
@@ -662,7 +675,29 @@ pub fn make_instruction(mnemonic: &str, operand_raw: &str) -> Kind {
             }
         }
     }
-    Kind::Instr { mnem, mode, raw, base, display, smc }
+    let force_abs = forced == "abs" && matches!(mode, Mode::Absolute | Mode::AbsoluteX | Mode::AbsoluteY);
+    Kind::Instr { mnem, mode, raw, base, display, smc, force_abs }
+}
+
+/// `_parenWrapsAll`: "(…)" whose first parenthesis closes at the end — `(vec+2)`, not `(a)+(b)`.
+fn paren_wraps_all(s: &str) -> bool {
+    if !s.starts_with('(') || !s.ends_with(')') {
+        return false;
+    }
+    let mut depth = 0i32;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return i == s.len() - 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 fn index_suffix(mode: Mode) -> &'static str {
@@ -709,7 +744,7 @@ fn memory_macro(line: &str) -> Option<Kind> {
     if let Some(c) = regex!(r#"(?i)^\.include\s+"([^"]*)"\s*(?:,\s*\$([0-9A-Fa-f]{1,4}))?\s*$"#).captures(line) {
         let name = c[1].to_string();
         let file = if name.is_empty() || regex!(r"(?i)\.(json|inc|asm|s)$").is_match(&name) { name } else { format!("{name}.json") };
-        return Some(Kind::Include { file, addr: c.get(2).map(|m| m.as_str().to_uppercase()).unwrap_or_default(), blocks: Vec::new(), path: String::new() });
+        return Some(Kind::Include { file, addr: c.get(2).map(|m| m.as_str().to_uppercase()).unwrap_or_default(), blocks: Vec::new(), path: String::new(), error: None });
     }
     if let Some(c) = regex!(r#"(?i)^\.sid\s+"([^"]*)"\s*(?:,\s*\$([0-9A-Fa-f]{1,4}))?\s*$"#).captures(line) {
         let custom = c.get(2).map(|m| m.as_str().to_uppercase()).unwrap_or_default();

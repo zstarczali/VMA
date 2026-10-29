@@ -1,6 +1,6 @@
 # VMA - Visual Macro Assembler
 
-Version 2.0.0.
+Version 2.1.0.
 
 The 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler), in Rust:
 a library (`vma`) and a command-line compiler (`vma build`).
@@ -25,11 +25,17 @@ syntax, the command line and the known limitations.
 
 ## Command line
 
+Ready-made `vma` binaries for Windows x64 / ARM64, macOS x64 / ARM64 and Linux x64 are on the
+[Releases](https://github.com/zstarczali/VMA/releases) page (built by `.github/workflows/release.yml` from a `v*` tag).
+Or build it yourself:
+
 ```bash
 cargo build --release
 target/release/vma build game.asm -o game.prg
 target/release/vma build game.asm --debug          # game.prg + .sym / .vs / .dbg
 target/release/vma build game.asm --no-basic-stub  # no 10 SYS line
+target/release/vma build game.asm --crt game.crt   # Magic Desk cartridge
+target/release/vma build game.asm --d64 --add music.prg  # 1541 disk image, no c1541 needed
 target/release/vma --help
 ```
 

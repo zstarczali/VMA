@@ -1,6 +1,8 @@
 //! The files the VMA directives read (`.incbin`, `.koala`, …): `FileProvider` and the directory
 //! resolver of the app (`reload_*_file` in src-tauri/src/lib.rs, `resolveFile` of the golden harness).
 
+use crate::asm::INCLUDE_MAX_DEPTH;
+use crate::msg::Msg;
 use crate::parse::{Base, Block, Kind, Mode};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -161,6 +163,7 @@ fn json_block(b: &Value) -> Block {
                 base: json_base(&b["base"]),
                 display: s("operand"),
                 smc: b["smcLabel"].as_str().filter(|l| !l.is_empty()).map(String::from),
+                force_abs: false,
             },
             _ => Kind::Unsupported { what: "JSON_INCLUDE_BLOCK".into() },
         }
@@ -169,21 +172,67 @@ fn json_block(b: &Value) -> Block {
     Block { kind, line: 0, included: true, file_line, text: None }
 }
 
-/// `reloadIncludeBlocks` / `reloadIncBinBlocks` / `reloadSidBlocks` over the top-level program (as in
-/// the app, the files of an included file's own directives are not read).
+/// An included file's own directives: its folder first, then where `inner` looks (the app passes
+/// the included file's path as the base of `reloadIncBinBlocks` / `reloadSidBlocks`).
+struct Relative<'a> {
+    dir: PathBuf,
+    inner: &'a dyn FileProvider,
+}
+
+impl FileProvider for Relative<'_> {
+    fn load(&self, name: &str, exts: &[&str]) -> Result<(PathBuf, Vec<u8>), String> {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() && !Path::new(trimmed).is_absolute() {
+            for ext in std::iter::once(&"").chain(exts) {
+                let mut p = self.dir.join(trimmed).into_os_string();
+                p.push(ext);
+                let p = PathBuf::from(p);
+                if p.is_file() {
+                    return std::fs::read(&p).map(|b| (p.clone(), b)).map_err(|e| format!("{}: {e}", p.display()));
+                }
+            }
+        }
+        self.inner.load(name, exts)
+    }
+}
+
+/// `reloadIncludeBlocks` / `reloadIncBinBlocks` / `reloadSidBlocks`: the program's files, and the
+/// files an included file names itself (`.include`, `.incbin`, `.sid`), relative to its folder.
+/// An include that is not found, or that includes itself, gets an `error` (a build error).
 pub fn load_assets(program: &mut [Block], files: &dyn FileProvider) {
+    load_assets_at(program, files, 0, &[]);
+}
+
+fn load_assets_at(program: &mut [Block], files: &dyn FileProvider, depth: usize, seen: &[PathBuf]) {
     for block in program.iter_mut() {
         let line = block.line;
-        if let Kind::Include { file, blocks, path: found, .. } = &mut block.kind {
+        if let Kind::Include { file, blocks, path: found, error, .. } = &mut block.kind {
             if file.trim().is_empty() {
                 continue;
             }
-            // a failed include keeps no blocks (the app keeps the last loaded ones)
-            if let Ok((path, bytes)) = files.load(file, &[".json", ".asm", ".inc", ".s"]) {
-                if let Ok(b) = include_blocks(&path, &bytes, line) {
-                    *blocks = b;
+            match files.load(file, &[".json", ".asm", ".inc", ".s"]) {
+                Ok((path, bytes)) => {
                     // `a/./b` → `a\b` as path.join gives it
-                    *found = path.components().collect::<PathBuf>().display().to_string();
+                    let normalized = path.components().collect::<PathBuf>();
+                    if seen.contains(&normalized) || depth >= INCLUDE_MAX_DEPTH {
+                        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| file.clone());
+                        blocks.clear();
+                        *error = Some(Msg::keyed("includeRecursive", format!("The include file includes itself or a file that includes it: {name}")).p("file", name));
+                        continue;
+                    }
+                    if let Ok(b) = include_blocks(&path, &bytes, line) {
+                        *blocks = b;
+                        *found = normalized.display().to_string();
+                        *error = None;
+                        let inner = Relative { dir: path.parent().map(PathBuf::from).unwrap_or_default(), inner: files };
+                        let mut next = seen.to_vec();
+                        next.push(normalized);
+                        load_assets_at(blocks, &inner, depth + 1, &next);
+                    }
+                }
+                Err(_) => {
+                    blocks.clear();
+                    *error = Some(Msg::keyed("includeNotFound", format!("Include file not found: {file}")).p("file", file.clone()));
                 }
             }
             continue;
