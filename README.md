@@ -26,7 +26,8 @@ syntax, the command line and the known limitations.
 ## Command line
 
 Ready-made `vma` binaries for Windows x64 / ARM64, macOS x64 / ARM64 and Linux x64 are on the
-[Releases](https://github.com/zstarczali/VMA/releases) page (built by `.github/workflows/release.yml` from a `v*` tag).
+[Releases](https://github.com/zstarczali/VMA/releases) page, with this README and the manuals as PDF (built by
+`.github/workflows/release.yml`, started by hand).
 Or build it yourself:
 
 ```bash
