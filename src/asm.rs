@@ -780,6 +780,7 @@ impl Assembler {
         let mut const_index = 0usize;
         let mut inside: Option<(String, bool)> = None;
         let mut invocations = 0usize;
+        let mut macro_skips = 0usize;
         for b in program {
             let ci = if matches!(b.kind, Kind::Const { .. }) {
                 const_index += 1;
@@ -790,14 +791,23 @@ impl Assembler {
             match &b.kind {
                 Kind::MacroDefStart { name, params } => {
                     let has_params = !params.trim().is_empty();
-                    // a parameter-less macro is also a subroutine at its definition (JSR name)
+                    // a parameter-less macro is also a subroutine at its definition (JSR name):
+                    // the program flow jumps over it
                     if !name.is_empty() && !has_params {
+                        macro_skips += 1;
+                        let jump = crate::parse::make_instruction("JMP", &format!("__ml_skip_{macro_skips}"));
+                        out.push((Block { kind: jump, line: b.line, included: b.included, file_line: None, text: None }, Meta::default()));
                         out.push((Block { kind: Kind::Label { name: name.clone(), offset: 0, kick_scope: false }, line: b.line, included: false, file_line: None, text: None }, Meta::default()));
                     }
                     inside = Some((name.clone(), has_params));
                     continue;
                 }
                 Kind::MacroDefEnd => {
+                    if matches!(&inside, Some((name, false)) if !name.is_empty()) {
+                        let mut push = |kind: Kind| out.push((Block { kind, line: b.line, included: b.included, file_line: None, text: None }, Meta::default()));
+                        push(crate::parse::make_instruction("RTS", ""));
+                        push(Kind::Label { name: format!("__ml_skip_{macro_skips}"), offset: 0, kick_scope: false });
+                    }
                     inside = None;
                     continue;
                 }
@@ -833,6 +843,7 @@ impl Assembler {
             // the library's own ORGs mean nothing here; its parameter-less macros become
             // subroutines only at a fixed address
             let mut lib: Option<bool> = None;
+            let mut lib_named = false;
             for sub in blocks {
                 match &sub.kind {
                     Kind::Org { .. } => continue,
@@ -842,9 +853,14 @@ impl Assembler {
                             out.push(mk(Kind::Label { name: name.clone(), offset: 0, kick_scope: false }));
                         }
                         lib = Some(has_params);
+                        lib_named = !name.is_empty();
                         continue;
                     }
                     Kind::MacroDefEnd => {
+                        // the subroutine returns
+                        if fixed && lib == Some(false) && lib_named {
+                            out.push((Block { kind: crate::parse::make_instruction("RTS", ""), text: None, ..sub.clone() }, from()));
+                        }
                         lib = None;
                         continue;
                     }
