@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="512" height="512" role="img" aria-label="VMA">
+  <title>VMA</title>
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="0.7"/>
+    </filter>
+    <g id="mark">
+    <rect x="10" y="3" width="3" height="3"/>
+    <rect x="12" y="5" width="3" height="3"/>
+    <rect x="14" y="7" width="3" height="3"/>
+    <rect x="16" y="9" width="3" height="3"/>
+    <rect x="14" y="11" width="3" height="3"/>
+    <rect x="12" y="13" width="3" height="3"/>
+    <rect x="10" y="15" width="3" height="3"/>
+    <rect x="22" y="15" width="8" height="3"/>
+    <rect x="4" y="22" width="2" height="2"/>
+    <rect x="12" y="22" width="2" height="2"/>
+    <rect x="4" y="24" width="2" height="2"/>
+    <rect x="12" y="24" width="2" height="2"/>
+    <rect x="4" y="26" width="2" height="2"/>
+    <rect x="12" y="26" width="2" height="2"/>
+    <rect x="4" y="28" width="2" height="2"/>
+    <rect x="12" y="28" width="2" height="2"/>
+    <rect x="4" y="30" width="2" height="2"/>
+    <rect x="12" y="30" width="2" height="2"/>
+    <rect x="6" y="32" width="2" height="2"/>
+    <rect x="10" y="32" width="2" height="2"/>
+    <rect x="8" y="34" width="2" height="2"/>
+    <rect x="16" y="22" width="2" height="2"/>
+    <rect x="24" y="22" width="2" height="2"/>
+    <rect x="16" y="24" width="4" height="2"/>
+    <rect x="22" y="24" width="4" height="2"/>
+    <rect x="16" y="26" width="2" height="2"/>
+    <rect x="20" y="26" width="2" height="2"/>
+    <rect x="24" y="26" width="2" height="2"/>
+    <rect x="16" y="28" width="2" height="2"/>
+    <rect x="20" y="28" width="2" height="2"/>
+    <rect x="24" y="28" width="2" height="2"/>
+    <rect x="16" y="30" width="2" height="2"/>
+    <rect x="24" y="30" width="2" height="2"/>
+    <rect x="16" y="32" width="2" height="2"/>
+    <rect x="24" y="32" width="2" height="2"/>
+    <rect x="16" y="34" width="2" height="2"/>
+    <rect x="24" y="34" width="2" height="2"/>
+    <rect x="30" y="22" width="6" height="2"/>
+    <rect x="28" y="24" width="2" height="2"/>
+    <rect x="36" y="24" width="2" height="2"/>
+    <rect x="28" y="26" width="2" height="2"/>
+    <rect x="36" y="26" width="2" height="2"/>
+    <rect x="28" y="28" width="10" height="2"/>
+    <rect x="28" y="30" width="2" height="2"/>
+    <rect x="36" y="30" width="2" height="2"/>
+    <rect x="28" y="32" width="2" height="2"/>
+    <rect x="36" y="32" width="2" height="2"/>
+    <rect x="28" y="34" width="2" height="2"/>
+    <rect x="36" y="34" width="2" height="2"/>
+    </g>
+  </defs>
+  <rect width="40" height="40" rx="4" fill="#000"/>
+  <use href="#mark" fill="#FFEE14" opacity="0.55" filter="url(#glow)"/>
+  <g shape-rendering="crispEdges">
+    <use href="#mark" fill="#8F8200" x="-1" y="1"/>
+    <use href="#mark" fill="#FFEE14"/>
+  </g>
+</svg>
