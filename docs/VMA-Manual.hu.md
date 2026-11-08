@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.1.0-s verzió**
+**Nyelvi kézikönyv · 2.1.1-es verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -86,8 +86,9 @@ tevő direktíva (`.rawbytes`, `.incbin`, `.sid` …) egy képbe kerül; a közt
   címre.
 - **A BASIC sor alá eső kód** (`$0801` alatti ORG a stubbal együtt): egy kis betöltő indítja és teszi a helyére a
   programot, így az továbbra is `RUN`-nal indul.
-- A saját BASIC SYS sorral kezdődő forrás (`.byte $0B, $08, $0A, $00, $9E, …` a `$0801`-en) változatlanul kerül a
-  PRG-be, második stub nélkül.
+- A saját BASIC SYS sort író forrás (`.byte $0B, $08, $0A, $00, $9E, …` a `$0801`-en) változatlanul kerül a
+  PRG-be, második stub nélkül. A sor a forrásban bárhol állhat, a kód után és címke mögött is (ahogy a Restore64
+  visszafejtései írják); a `$0801`-en marad (2.1.1-től).
 
 A PRG-ből a parancssor **cartridge**-et és **lemezképet** is készít (2.1.0-tól, lásd
 [8. Parancssor](#8-parancssor)):
