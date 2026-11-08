@@ -1,6 +1,10 @@
 # VMA - Visual Macro Assembler
 
-Version 2.1.0.
+Version 2.1.1.
+
+2.1.1: a source's own BASIC SYS line at `$0801` is found when it comes after the code (as Restore64
+disassemblies write it, with a label in front) and stays at `$0801`; before, it was moved over the first 12 bytes of
+the code.
 
 The 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler), in Rust:
 a library (`vma`) and a command-line compiler (`vma build`).

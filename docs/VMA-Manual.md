@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.1.0**
+**Language manual · version 2.1.1**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -87,8 +87,9 @@ gaps between them are zeros.
   `; Entry point: $1234`.
 - **Code below the BASIC line** (an ORG lower than `$0801` together with the stub): a small loader starts the
   program and moves it into place, so it still starts with `RUN`.
-- A source that begins with its own BASIC SYS line (`.byte $0B, $08, $0A, $00, $9E, …` at `$0801`) is emitted
-  as it is, without a second stub.
+- A source with its own BASIC SYS line (`.byte $0B, $08, $0A, $00, $9E, …` at `$0801`) is emitted as it is,
+  without a second stub. The line may come anywhere in the source, also after the code and behind a label (as
+  Restore64 disassemblies write it); it stays at `$0801` (new in 2.1.1).
 
 From the PRG the command line also makes a **cartridge** and a **disk image** (new in 2.1.0, see
 [8. Command line](#8-command-line)):
