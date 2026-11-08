@@ -46,11 +46,11 @@ fn embedded_sys_address(program: &[Block]) -> Option<i64> {
     if program.len() < 2 {
         return None;
     }
-    let org = program.iter().position(|b| matches!(&b.kind, Kind::Org { address } if address.to_uppercase() == "0801"))?;
+    let org = program.iter().position(|b| matches!(&b.kind, Kind::Org { address } if address.trim_start_matches('$') == "0801"))?;
     let mut bytes: Vec<f64> = Vec::new();
     for b in &program[org + 1..] {
         match &b.kind {
-            Kind::Comment { .. } | Kind::Blank | Kind::Region | Kind::EndRegion | Kind::KickScopeEnd => continue,
+            Kind::Comment { .. } | Kind::Blank | Kind::Region | Kind::EndRegion | Kind::KickScopeEnd | Kind::Label { .. } => continue,
             Kind::Byte { raw, .. } => {
                 let parsed: Vec<f64> = raw.split(',').map(|t| js_parse_int(t.trim().trim_start_matches('$'), 16)).collect();
                 if parsed.iter().any(|v| !v.is_finite() || *v < 0.0 || *v > 255.0) {
@@ -238,7 +238,8 @@ pub fn build_prg_full(program: &[Block], basic_stub: bool) -> Result<Built, Comp
     let origin = origin_of(program);
     let prg = |origin: i64, overridden: bool| -> Result<Image, CompileError> { Assembler::new(program).assemble(program, origin, overridden) };
     if let Some(sys) = embedded_sys_address(program) {
-        return prg(origin, true).map(|i| Built { prg: prg_of(&i), sys_address: Some(sys), segments: i.segments(), entry: sys });
+        // $0801: the source's own stub stays there even when it is not the first ORG.
+        return prg(0x0801, true).map(|i| Built { prg: prg_of(&i), sys_address: Some(sys), segments: i.segments(), entry: sys });
     }
     if !basic_stub {
         let target = if origin == 0x0801 { 0xC000 } else { origin };
