@@ -124,8 +124,11 @@ pub enum Kind {
     LoadFile { name: String, device: String, addr: String, error_label: String },
     Delay { frames: String },
     /// INCBIN / KOALA (`incBinKoala`): `bytes` filled by `files::load_assets`, `error` = its load error
-    /// INCBIN / KOALA (`incBinKoala`) / LEVEL (`incBinLevel`)
-    IncBin { file: String, addr: String, koala: bool, level: bool, bytes: Vec<u8>, error: Option<String> },
+    /// INCBIN / KOALA (`incBinKoala`) / LEVEL (`incBinLevel`) / U64_PALETTE (`incBinU64Pal`)
+    IncBin { file: String, addr: String, koala: bool, level: bool, u64pal: bool, bytes: Vec<u8>, error: Option<String> },
+    /// `.u64_palette_color index, $RRGGBB` (the raw operand) / `.u64_palette_reset`
+    U64PalColor { raw: String },
+    U64PalReset,
     /// `.level_row dst, col[, color]`: `syntax_ok` = `_levelRowParse` of the source line
     LevelRow { raw: String, syntax_ok: bool },
     /// `.include "f"[, $addr]`: `blocks` filled by `files::load_assets`; `addr` = hex digits or empty
@@ -759,11 +762,20 @@ fn memory_macro(line: &str) -> Option<Kind> {
         let (koala, level) = (c[1].eq_ignore_ascii_case("koala"), c[1].eq_ignore_ascii_case("level"));
         let default = if koala { "6000" } else if level { "2000" } else { "C000" };
         let addr = format!("${}", c.get(3).map(|m| m.as_str().to_uppercase()).unwrap_or_else(|| default.into()));
-        return Some(Kind::IncBin { file: c[2].to_string(), addr, koala, level, bytes: Vec::new(), error: None });
+        return Some(Kind::IncBin { file: c[2].to_string(), addr, koala, level, u64pal: false, bytes: Vec::new(), error: None });
     }
     if let Some(c) = regex!(r"(?i)^\.level_row\b\s*(.*)$").captures(line) {
         let raw = c[1].trim().to_string();
         return Some(Kind::LevelRow { syntax_ok: crate::level::level_row_parse(&raw).is_some(), raw });
+    }
+    if let Some(c) = regex!(r#"(?i)^\.u64_palette\s+"([^"]*)"\s*$"#).captures(line) {
+        return Some(Kind::IncBin { file: c[1].to_string(), addr: String::new(), koala: false, level: false, u64pal: true, bytes: Vec::new(), error: None });
+    }
+    if let Some(c) = regex!(r"(?i)^\.u64_palette_color\b\s*(.*)$").captures(line) {
+        return Some(Kind::U64PalColor { raw: c[1].trim().to_string() });
+    }
+    if regex!(r"(?i)^\.u64_palette_reset\s*$").is_match(line) {
+        return Some(Kind::U64PalReset);
     }
     if let Some(c) = regex!(r#"(?i)^\.loadfile\s+"([^"]*)"\s*,\s*([A-Za-z_][A-Za-z0-9_]*|\d+|\$[0-9A-Fa-f]{1,4})\s*(?:,\s*\$([0-9A-Fa-f]{1,4}))?\s*(?:,\s*([A-Za-z_][A-Za-z0-9_]*))?\s*$"#).captures(line) {
         return Some(Kind::LoadFile {
