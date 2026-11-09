@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.1.1**
+**Language manual · version 2.2.0**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -2511,6 +2511,60 @@ A9 xx   LDA #speed_byte
 
 ---
 
+### U64_PALETTE / U64_PALETTE_COLOR / U64_PALETTE_RESET
+
+Set the **video palette of an Ultimate 64 / C64 Ultimate** through the Ultimate Command Interface
+(`$DF1C`–`$DF1F`, firmware 3.15 or newer, Command Interface enabled in the menu). New in 2.2.
+
+| Macro | Syntax | Size | Command (target `$04`) |
+|-------|--------|------|---------|
+| U64_PALETTE | `.u64_palette "file.vpl"` | 109 bytes | `$52` + 16 × R, G, B |
+| U64_PALETTE_COLOR | `.u64_palette_color index, $RRGGBB` | 65 bytes | `$53` index, R, G, B |
+| U64_PALETTE_RESET | `.u64_palette_reset` | 61 bytes | `$54` (the palette of the menu) |
+
+The file of `.u64_palette` is found like an `.incbin` file. It is a VICE `.vpl` (`RR GG BB dither` per line, `#`
+comments), a GIMP `.gpl`, any text with at least 16 `#RRGGBB` / `$RRGGBB` / `0xRRGGBB` values, or a Photoshop `.act`
+(binary, 768 bytes or more); the first 16 colours are used. Its colours are in the generated code; nothing else goes
+into memory. The index and the colour of `.u64_palette_color` are expressions: the index must be 0–15, the colour
+`$000000`–`$FFFFFF`.
+
+**Generated code** (59 bytes, then the command bytes; A and X are destroyed):
+```
+        LDA $DF1D       ; identification: $C9 when the interface is on
+        CMP #$C9
+        BNE done        ; no interface (VICE, older firmware): skip
+idle:   LDA $DF1C
+        AND #$30        ; state
+        BEQ ready
+        AND #$20
+        BEQ idle        ; busy
+        LDA #$02        ; data from an earlier command: accept it
+        STA $DF1C
+        BNE idle
+ready:  LDX #$00
+send:   LDA data,X
+        STA $DF1D
+        INX
+        CPX #len
+        BNE send
+        LDA #$01        ; push the command
+        STA $DF1C
+busy:   LDA $DF1C
+        AND #$30
+        CMP #$10
+        BEQ busy
+        LDA #$02        ; accept the answer
+        STA $DF1C
+        BNE done
+data:   .byte $04, command, ...
+done:
+```
+
+**Errors:** `u64PaletteNeedsFile` (no file), `u64PaletteBadFile` (not 16 colours), `u64PaletteColorSyntax`,
+`u64PaletteColorRange`.
+
+---
+
 ### SUPERCPU_DETECT
 
 Checks whether a **CMD SuperCPU** accelerator is installed — like `PEEK($D0B8)` to see if it returns something other than `$FF`.
@@ -2822,7 +2876,7 @@ vma --version
 | Option | Meaning |
 |---|---|
 | `-o FILE` | The PRG to write (default: the input with a `.prg` extension) |
-| `--base-dir DIR` | Where `.incbin` / `.koala` / `.level` / `.sid` / `.include` files are looked up first (default: the folder of the input) |
+| `--base-dir DIR` | Where `.incbin` / `.koala` / `.level` / `.u64_palette` / `.sid` / `.include` files are looked up first (default: the folder of the input) |
 | `--search DIR` | A further folder to look in, after the base dir (repeatable, in order); a path written on another machine falls back to its bare file name |
 | `--no-basic-stub` | No `10 SYS…` BASIC line in front of the code |
 | `--raw` | The image alone at its first ORG: no stub, no move to `$C000` |

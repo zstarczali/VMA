@@ -453,6 +453,7 @@ impl Assembler {
                     };
                     (kind, start, len, label)
                 }
+                Kind::IncBin { u64pal: true, .. } => continue,
                 Kind::IncBin { file, addr, .. } => {
                     let start = parse_address_value(addr).unwrap_or(0xC000 as f64) as i64;
                     ("incbin", start, incbin_payload(&line.block.kind).len(), quoted("INCBIN", file, format_address(start)))
@@ -730,7 +731,10 @@ impl Assembler {
                 3 + len + 9 + 9 + if addr.trim().is_empty() { 0 } else { 4 } + 5 + 2
             }
             Kind::Delay { .. } => 5,
+            Kind::IncBin { u64pal: true, .. } => crate::u64pal::PAL_SIZE,
             Kind::IncBin { koala, .. } => if *koala { 86 } else { 0 },
+            Kind::U64PalColor { .. } => crate::u64pal::COLOR_SIZE,
+            Kind::U64PalReset => crate::u64pal::RESET_SIZE,
             Kind::SidPlayer { .. } => SID_PLAYER_SIZE,
             Kind::LevelRow { .. } => 132,
             Kind::SpritePos { .. } => 18,
@@ -977,7 +981,7 @@ impl Assembler {
                         }
                     }
                 }
-                Kind::LevelRow { raw, .. } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => {
+                Kind::LevelRow { raw, .. } | Kind::U64PalColor { raw } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => {
                     if !raw.is_empty() {
                         *raw = rewrite(raw);
                     }
@@ -2084,6 +2088,23 @@ impl Assembler {
                 let (d, c) = (eval(&dst)?, eval(&col)?);
                 Ok(crate::level::level_row_bytes(address, d, c, color, &tab))
             }
+            Kind::IncBin { u64pal: true, bytes, .. } => match crate::u64pal::palette_colors(bytes) {
+                Some(colors) => Ok(crate::u64pal::palette_bytes(address, &colors)),
+                None if bytes.is_empty() => Err(Msg::keyed("u64PaletteNeedsFile", "U64_PALETTE: no palette file")),
+                None => Err(Msg::keyed("u64PaletteBadFile", "U64_PALETTE: the file is not a palette")),
+            },
+            Kind::U64PalColor { raw } => {
+                let (index, color) = crate::u64pal::color_parse(raw).ok_or_else(|| Msg::keyed("u64PaletteColorSyntax", "Format: .u64_palette_color index, $RRGGBB"))?;
+                let eval = |e: &str| {
+                    self.eval_asm_expr(&substitute_star_pc(e, address), Some(&self.labels)).filter(|v| !v.is_nan()).ok_or_else(|| Msg::keyed("assertUnresolved", format!("{e}: cannot be evaluated")).p("expr", e))
+                };
+                let (i, c) = (eval(&index)?, eval(&color)?);
+                if !(0.0..=15.0).contains(&i) || !(0.0..=16777215.0).contains(&c) {
+                    return Err(Msg::keyed("u64PaletteColorRange", "U64_PALETTE_COLOR: the index must be 0-15 and the colour $000000-$FFFFFF"));
+                }
+                Ok(crate::u64pal::color_bytes(address, js_and(i, 0xFF), js_and(c, 0xFFFFFF)))
+            }
+            Kind::U64PalReset => Ok(crate::u64pal::reset_bytes(address)),
             Kind::IncBin { level: true, addr, bytes, .. } => match crate::level::level_build(bytes, parse_address_value(addr).unwrap_or(0x2000 as f64) as i64) {
                 Err(e) => Err(e.into()),
                 Ok(_) => Ok(Vec::new()),
@@ -2337,8 +2358,10 @@ impl Assembler {
                     None => continue,
                 },
                 Kind::Sid { file, .. } if file.trim().is_empty() => Msg::keyed("sidMacroNeedsFile", "SID: no file given"),
-                Kind::IncBin { file, koala, level, .. } if file.trim().is_empty() => {
-                    let (what, key) = if *koala {
+                Kind::IncBin { file, koala, level, u64pal, .. } if file.trim().is_empty() => {
+                    let (what, key) = if *u64pal {
+                        ("U64_PALETTE", "u64PaletteNeedsFile")
+                    } else if *koala {
                         ("KOALA", "koalaMacroNeedsFile")
                     } else if *level {
                         ("LEVEL", "levelMacroNeedsFile")
@@ -2805,7 +2828,7 @@ fn raw_operand(kind: &Kind) -> &str {
     match kind {
         Kind::Instr { raw, .. } | Kind::LongBranch { raw, .. } | Kind::Byte { raw, .. } | Kind::Word { raw, .. } | Kind::Fill { raw, .. } | Kind::Align { raw, .. } | Kind::Const { raw, .. } => raw,
         Kind::Assert { expr, .. } => expr,
-        Kind::RtCmp { raw, .. } | Kind::LevelRow { raw, .. } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Mem { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => raw,
+        Kind::RtCmp { raw, .. } | Kind::LevelRow { raw, .. } | Kind::U64PalColor { raw } | Kind::PrintChar { raw } | Kind::SetColor { raw, .. } | Kind::Text { raw, .. } | Kind::Mem { raw, .. } | Kind::Print { raw, .. } | Kind::CharDef { raw, .. } => raw,
         _ => "",
     }
 }
@@ -2845,6 +2868,7 @@ fn sid_player_bytes(address: i64, init: i64, play: i64, song: i64, raster: i64) 
 /// built level data)
 fn incbin_payload(kind: &Kind) -> Vec<u8> {
     match kind {
+        Kind::IncBin { u64pal: true, .. } => Vec::new(),
         Kind::IncBin { level: true, addr, bytes, .. } => crate::level::level_build(bytes, parse_address_value(addr).unwrap_or(0x2000 as f64) as i64)
             .ok()
             .flatten()

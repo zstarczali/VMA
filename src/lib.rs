@@ -15,6 +15,7 @@ pub mod msg;
 pub mod num;
 pub mod opcodes;
 pub mod parse;
+pub mod u64pal;
 pub mod prg;
 
 pub use asm::CompileError;

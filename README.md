@@ -1,6 +1,9 @@
 # VMA - Visual Macro Assembler
 
-Version 2.1.1.
+Version 2.2.0.
+
+2.2.0: `.u64_palette "file.vpl"`, `.u64_palette_color index, $RRGGBB` and `.u64_palette_reset` set the
+video palette of an Ultimate 64 / C64 Ultimate through its Command Interface (firmware 3.15+).
 
 2.1.1: a source's own BASIC SYS line at `$0801` is found when it comes after the code (as Restore64
 disassemblies write it, with a label in front) and stays at `$0801`; before, it was moved over the first 12 bytes of
@@ -44,7 +47,7 @@ target/release/vma build game.asm --d64 --add music.prg  # 1541 disk image, no c
 target/release/vma --help
 ```
 
-Files named by `.incbin` / `.koala` / `.level` / `.sid` / `.include` are looked up in the folder of
+Files named by `.incbin` / `.koala` / `.level` / `.u64_palette` / `.sid` / `.include` are looked up in the folder of
 the input (`--base-dir`), then in every `--search` folder.
 
 ## Library

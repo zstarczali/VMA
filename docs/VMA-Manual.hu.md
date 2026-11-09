@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.1.1-es verzió**
+**Nyelvi kézikönyv · 2.2.0-s verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -2510,6 +2510,59 @@ A9 xx   LDA #speed_byte
 
 ---
 
+### U64_PALETTE / U64_PALETTE_COLOR / U64_PALETTE_RESET
+
+Az **Ultimate 64 / C64 Ultimate videó-palettáját** állítják az Ultimate Command Interface-en át
+(`$DF1C`–`$DF1F`, 3.15-ös vagy újabb firmware, a menüben bekapcsolt Command Interface). Új a 2.2-ben.
+
+| Makró | Szintaxis | Méret | Parancs (cél `$04`) |
+|-------|--------|------|---------|
+| U64_PALETTE | `.u64_palette "fájl.vpl"` | 109 byte | `$52` + 16 × R, G, B |
+| U64_PALETTE_COLOR | `.u64_palette_color index, $RRGGBB` | 65 byte | `$53` index, R, G, B |
+| U64_PALETTE_RESET | `.u64_palette_reset` | 61 byte | `$54` (a menü palettája) |
+
+A `.u64_palette` fájlját úgy keresi, mint egy `.incbin` fájlt. Lehet VICE `.vpl` (soronként `RR GG BB dither`, `#`
+megjegyzés), GIMP `.gpl`, bármilyen szöveg legalább 16 `#RRGGBB` / `$RRGGBB` / `0xRRGGBB` értékkel, vagy Photoshop
+`.act` (bináris, legalább 768 byte); az első 16 szín számít. A színek a generált kódba kerülnek, máshová nem kerül
+semmi a memóriában. A `.u64_palette_color` indexe és színe kifejezés: az index 0–15, a szín `$000000`–`$FFFFFF`.
+
+**Generált kód** (59 byte, utána a parancs bájtjai; az A és X elvész):
+```
+        LDA $DF1D       ; azonosító: $C9, ha az interfész be van kapcsolva
+        CMP #$C9
+        BNE done        ; nincs interfész (VICE, régebbi firmware): kihagyja
+idle:   LDA $DF1C
+        AND #$30        ; állapot
+        BEQ ready
+        AND #$20
+        BEQ idle        ; dolgozik
+        LDA #$02        ; korábbi parancs adata: elfogadja
+        STA $DF1C
+        BNE idle
+ready:  LDX #$00
+send:   LDA data,X
+        STA $DF1D
+        INX
+        CPX #len
+        BNE send
+        LDA #$01        ; parancs indítása
+        STA $DF1C
+busy:   LDA $DF1C
+        AND #$30
+        CMP #$10
+        BEQ busy
+        LDA #$02        ; a válasz elfogadása
+        STA $DF1C
+        BNE done
+data:   .byte $04, parancs, ...
+done:
+```
+
+**Hibák:** `u64PaletteNeedsFile` (nincs fájl), `u64PaletteBadFile` (nem 16 szín), `u64PaletteColorSyntax`,
+`u64PaletteColorRange`.
+
+---
+
 ### SUPERCPU_DETECT
 
 Ellenőrzi, hogy telepítve van-e egy **CMD SuperCPU** gyorsító — mint a `PEEK($D0B8)`, hogy `$FF`-től eltérő értéket ad-e vissza.
@@ -2822,7 +2875,7 @@ vma --version
 | Kapcsoló | Jelentés |
 |---|---|
 | `-o FÁJL` | A kiírandó PRG (alapból a bemenet `.prg` kiterjesztéssel) |
-| `--base-dir MAPPA` | Itt keresi először az `.incbin` / `.koala` / `.level` / `.sid` / `.include` fájlokat (alapból a bemenet mappája) |
+| `--base-dir MAPPA` | Itt keresi először az `.incbin` / `.koala` / `.level` / `.u64_palette` / `.sid` / `.include` fájlokat (alapból a bemenet mappája) |
 | `--search MAPPA` | További keresési mappa a base dir után (ismételhető, sorrendben); a más gépen írt útvonal a puszta fájlnévre esik vissza |
 | `--no-basic-stub` | Nincs `10 SYS…` BASIC sor a kód előtt |
 | `--raw` | Csak a memóriakép az első ORG-on: nincs stub, nincs `$C000`-ra tolás |
