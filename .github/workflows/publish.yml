@@ -1,0 +1,59 @@
+# Uploads the packages of a successful Release run and the PDF manuals of its commit to
+# www.c64va.pro/downloads/VMA/ (FTPS); the packages of older versions are removed there.
+# Manual only: Actions → Publish → Run workflow, with the Release run's ID (from its Actions URL).
+# Secret: FTP_PASSWORD.
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Successful Release run ID (from its Actions URL)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-vma-ftp
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish packages and manuals to FTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate source build
+        id: build
+        run: python3 scripts/publish-artifacts.py --validate-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          BUILD_RUN_ID: ${{ inputs.run_id }}
+
+      # the README.pdf and docs/*.pdf of the commit the packages were built from
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.build.outputs.sha }}
+          path: build-source
+
+      # download-artifact extracts the artifact ZIPs; each artifact keeps its own directory.
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          pattern: vma-*
+          path: publish-artifacts
+
+      - name: Upload packages and manuals
+        run: python3 scripts/publish-artifacts.py publish-artifacts build-source
+        env:
+          FTP_HOST: ftpx.forpsi.com
+          FTP_USERNAME: www.c64va.pro
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIRECTORY: /www/downloads/VMA/
