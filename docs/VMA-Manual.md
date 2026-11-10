@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.2.0**
+**Language manual · version 2.3.0**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -211,6 +211,7 @@ ClearScreen:
 
 - Inside a scope, reference a local label as `.name`.
 - From another scope, reference it explicitly as `Global.name` (e.g. `JMP ClearScreen.loop`).
+- Either form takes an offset and an index like any label: `LDA .loop+1,X`, `STA ClearScreen.loop+2` *(2.3)*.
 - A `.name` written before any global label stays a plain top-level `.name`.
 
 ### Self-modifying-code operand labels
@@ -2892,6 +2893,7 @@ vma --version
 | `--json FILE` | The build as JSON: PRG, SYS address, symbols, laid-out lines, written segments, memory view — or every error with its line |
 | `--source-path NAME` | The main source the `.dbg` names (default: the input) |
 | `--line-map FILE` | JSON array: input line → the line the `.dbg` names |
+| `--analyze FILE` | The `--json` answer plus the listing: every line with its address, size, kind, bytes and error, the labels — written also when the build fails *(2.3)* |
 
 Exit status: `0` built, `1` compile error (`FILE:LINE: message` on standard error, one line per error), `2` bad usage.
 

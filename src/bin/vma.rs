@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: vma build <input.asm> [-o out.prg] [--base-dir DIR] [--search DIR]... [--no-basic-stub] [--raw]
                  [--crt FILE] [--crt-name NAME] [--d64 [FILE]] [--add FILE]... [--disk-name NAME]
-                 [--sym FILE] [--vs FILE] [--dbg FILE] [--debug] [--json FILE]
+                 [--sym FILE] [--vs FILE] [--dbg FILE] [--debug] [--json FILE] [--analyze FILE]
                  [--source-path NAME] [--line-map FILE]
        vma --help | --version";
 
@@ -42,6 +42,9 @@ build options:
   --debug           all three next to the PRG (out.sym, out.vs, out.dbg)
   --json FILE       the app's build answer (vma_build): PRG, SYS address, the three files,
                     the symbols and the laid-out lines
+  --analyze FILE    the app's analysis (vma_analyze): the --json answer plus the listing (every
+                    line's address, size, kind, bytes and error), the labels and the memory
+                    map, written also when the build fails; nothing else is written
   --source-path NAME  the main source the .dbg names (default: the input)
   --line-map FILE   JSON array: input line -> the line the .dbg names (-1: none,
                     -2: a further line of the previous line's block)
@@ -88,6 +91,7 @@ fn main() -> ExitCode {
     let mut search: Vec<PathBuf> = Vec::new();
     let (mut sym, mut vs, mut dbg, mut debug) = (None::<PathBuf>, None::<PathBuf>, None::<PathBuf>, false);
     let mut raw = false;
+    let mut analyze: Option<PathBuf> = None;
     let (mut json, mut source_path, mut line_map) = (None::<PathBuf>, None::<PathBuf>, None::<PathBuf>);
     let (mut crt, mut crt_name) = (None::<PathBuf>, String::new());
     // --d64 with no value: Some(empty) = next to the PRG
@@ -106,7 +110,7 @@ fn main() -> ExitCode {
             i += 1;
             continue;
         }
-        let takes_value = matches!(opt, "-o" | "--base-dir" | "--search" | "--sym" | "--vs" | "--dbg" | "--json" | "--source-path" | "--line-map" | "--crt" | "--crt-name" | "--add" | "--disk-name");
+        let takes_value = matches!(opt, "-o" | "--base-dir" | "--search" | "--sym" | "--vs" | "--dbg" | "--json" | "--analyze" | "--source-path" | "--line-map" | "--crt" | "--crt-name" | "--add" | "--disk-name");
         let value = if takes_value {
             i += 1;
             match args.get(i) {
@@ -126,6 +130,7 @@ fn main() -> ExitCode {
             "--debug" => debug = true,
             "--raw" => raw = true,
             "--json" => json = value,
+            "--analyze" => analyze = value,
             "--source-path" => source_path = value,
             "--line-map" => line_map = value,
             "--crt" => crt = value,
@@ -211,6 +216,14 @@ fn main() -> ExitCode {
             }
         },
     };
+    if let Some(p) = &analyze {
+        let source_path = source_path.clone().unwrap_or_else(|| input.clone()).display().to_string();
+        let answer = vma::analyze(&source, &options, &files, &source_path, line_map.as_deref());
+        if let Err(code) = write(p, answer.to_string().as_bytes()) {
+            return code;
+        }
+        return if answer["ok"].as_bool() == Some(true) { ExitCode::SUCCESS } else { ExitCode::from(1) };
+    }
     if raw {
         return match vma::build_raw(&source, &files) {
             Ok(built) => {

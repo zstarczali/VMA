@@ -118,6 +118,32 @@ pub struct DebugInfo {
     pub symbols: Vec<(String, i64)>,
 }
 
+/// A laid-out line of the app's live views (`vma::analyze`): the Block-mode ASM view, the
+/// Disassembly / Monitor panels, the Expert error marks, cycles and hints, the zero page map.
+#[derive(Clone, Debug)]
+pub struct ListLine {
+    pub address: i64,
+    pub size: i64,
+    pub skipped: bool,
+    /// 0-based line of the main source; None for a block of an included file
+    pub src_line: Option<usize>,
+    /// 0-based line in the included file (`file`)
+    pub file_line: Option<usize>,
+    pub file: Option<String>,
+    /// "instr" (a 6502 instruction), "label", "org", "data" (.byte / .word / .fill / .align),
+    /// "none" (no bytes of its own: comment, blank, const, define, if …), "code" (any other macro)
+    pub kind: &'static str,
+    /// the name the line defines: a label, a `.const` ("const"), a `.var` ("var"), a LOOP / FOR
+    /// label, a TABLE — with its `value`
+    pub name: Option<String>,
+    pub value: Option<i64>,
+    /// expanded from a macro call (or the body of a parameter-less macro at its definition)
+    pub from_macro: bool,
+    /// the bytes written at `address` (empty for the lines without bytes, None when it failed)
+    pub bytes: Option<Vec<u8>>,
+    pub error: Option<Msg>,
+}
+
 /// A user macro of `parseUserMacros`.
 #[derive(Clone)]
 struct Macro {
@@ -1357,6 +1383,88 @@ impl Assembler {
         Ok(DebugInfo { lines, symbols })
     }
 
+    /// The layout with the bytes of every line, also when some lines do not compile (their
+    /// `error`); only a layout that cannot be made at all is an error. Labels as `assemble`.
+    pub fn listing(&mut self, program: &[Block], origin: i64, override_origin: bool) -> Result<Vec<ListLine>, CompileError> {
+        let lines = self.layout(program, origin, override_origin)?;
+        for line in &lines {
+            self.add_labels(line);
+        }
+        self.resolve_pending_labels();
+        if lines.iter().any(|l| matches!(l.block.kind, Kind::Delay { .. })) {
+            let at = self.delay_helper_address(&lines, origin);
+            self.labels.set(DELAY_HELPER_LABEL, at as f64);
+        }
+        self.anon = lines.iter().filter(|l| matches!(l.block.kind, Kind::AnonLabel) && !l.skipped).map(|l| l.address).collect();
+        self.anon.sort();
+        let mut defined: Vec<(String, f64)> = Vec::new();
+        Ok(lines
+            .iter()
+            .map(|line| {
+                let a = line.address;
+                let (name, value): (Option<String>, Option<i64>) = match &line.block.kind {
+                    Kind::Label { name, offset, .. } => (Some(name.clone()), Some((a + offset) & 0xFFFF)),
+                    Kind::Loop { label, .. } | Kind::For { label, .. } if !label.is_empty() => (Some(label.clone()), Some(a + 2)),
+                    Kind::Table { name, .. } if !name.is_empty() => (Some(name.clone()), Some(a)),
+                    Kind::Var { name, .. } => (Some(name.clone()), line.meta.var_address),
+                    Kind::Const { name, raw, value, .. } => {
+                        let own = match line.meta.const_index {
+                            Some(ci) => self.consts[ci].value.or(*value),
+                            None => *value,
+                        };
+                        let v = own.filter(|v| v.is_finite()).or_else(|| {
+                            let t = raw.trim();
+                            parse_address_value(t).or_else(|| is_ident(t).then(|| defined.iter().find(|(n, _)| n == t).map(|(_, v)| *v)).flatten())
+                        });
+                        (Some(name.clone()), v.map(|v| js_and(v, 0xFFFF)))
+                    }
+                    _ => (None, None),
+                };
+                if let (Some(n), Some(v)) = (&name, value) {
+                    defined.push((n.clone(), v as f64));
+                }
+                let kind = match &line.block.kind {
+                    Kind::Instr { .. } => "instr",
+                    Kind::Label { .. } => "label",
+                    Kind::Const { .. } => "const",
+                    Kind::Var { .. } => "var",
+                    Kind::Org { .. } | Kind::RestoreAddress => "org",
+                    Kind::Byte { .. } | Kind::Word { .. } | Kind::Fill { .. } | Kind::Align { .. } => "data",
+                    Kind::Blank | Kind::Comment { error: None, .. } | Kind::AnonLabel | Kind::KickScopeEnd | Kind::Define { .. }
+                    | Kind::If { .. } | Kind::Else | Kind::EndIf | Kind::Region | Kind::EndRegion | Kind::MacroDefStart { .. } | Kind::MacroDefEnd
+                    | Kind::Include { .. } | Kind::SaveAddress | Kind::Assert { .. } => "none",
+                    _ => "code",
+                };
+                let silent = matches!(
+                    line.block.kind,
+                    Kind::Label { .. } | Kind::Comment { error: None, .. } | Kind::Blank | Kind::Org { .. } | Kind::RestoreAddress | Kind::Include { .. } | Kind::SaveAddress
+                );
+                let (bytes, error) = if silent {
+                    (Some(Vec::new()), None)
+                } else {
+                    match self.compile_line(line) {
+                        Ok(b) => (Some(b), None),
+                        Err(m) => (None, Some(m)),
+                    }
+                };
+                ListLine {
+                    address: line.address,
+                    size: line.size,
+                    skipped: line.skipped,
+                    src_line: (!line.block.included).then_some(line.block.line),
+                    file_line: line.block.file_line,
+                    file: line.meta.include_path.clone(),
+                    kind,
+                    name,
+                    value,
+                    from_macro: line.meta.from_macro.is_some() || line.meta.from_macro_def,
+                    bytes,
+                    error,
+                }
+            })
+            .collect())
+    }
+
     /// `buildOperandPreview` → its error (the validation of `getLiveValidationError`).
     fn operand_error(mode: Mode, raw: &str, base: Base) -> bool {
         if mode == Mode::Implied {
@@ -1399,10 +1507,11 @@ impl Assembler {
                         return false;
                     }
                 }
-                if is_ident(value) {
+                // a label; a local one is `Global.name` here (scope_local_labels)
+                if is_ident(value) || regex!(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$").is_match(value) {
                     return false;
                 }
-                if regex!(r"^([A-Za-z_][A-Za-z0-9_]*)\s*([+-])\s*(\$[0-9A-Fa-f]+|\d+)$").is_match(value) {
+                if regex!(r"^([A-Za-z_][A-Za-z0-9_.]*)\s*([+-])\s*(\$[0-9A-Fa-f]+|\d+)$").is_match(value) {
                     return false;
                 }
                 if value.contains('*') && regex!(r"^[*A-Za-z0-9_.$%<>()+\-/&|^\s]+$").is_match(value) {
@@ -1468,7 +1577,8 @@ impl Assembler {
         if let Some(v) = labels.get(raw) {
             return Ok(v);
         }
-        if let Some(c) = regex!(r"^([A-Za-z_][A-Za-z0-9_]*)\s*([+-])\s*(\$[0-9A-Fa-f]+|\d+)$").captures(raw) {
+        // label ± offset; a local label is `Global.name` here
+        if let Some(c) = regex!(r"^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*([+-])\s*(\$[0-9A-Fa-f]+|\d+)$").captures(raw) {
             let base_addr = labels.get(&c[1]).ok_or_else(err)?;
             let off = &c[3];
             let off = if let Some(h) = off.strip_prefix('$') { js_parse_int(h, 16) } else { js_parse_int(off, 10) };
