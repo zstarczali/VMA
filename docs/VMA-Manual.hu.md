@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.2.0-s verzió**
+**Nyelvi kézikönyv · 2.3.0-s verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -210,6 +210,7 @@ ClearScreen:
 
 - Egy hatókörön belül `.név`-ként hivatkozz a lokális címkére.
 - Másik hatókörből explicit módon `Globális.név`-ként (pl. `JMP ClearScreen.loop`).
+- Mindkét alak kaphat eltolást és indexet, mint bármely címke: `LDA .loop+1,X`, `STA ClearScreen.loop+2` *(2.3)*.
 - Az első globális címke előtt írt `.név` sima top-level `.név` marad.
 
 ### Önmódosító kód operandus-címkék
@@ -2891,6 +2892,7 @@ vma --version
 | `--json FÁJL` | A build JSON-ként: PRG, SYS cím, szimbólumok, elrendezett sorok, kiírt szegmensek, memórianézet — vagy minden hiba a sorával |
 | `--source-path NÉV` | A `.dbg`-ben megnevezett fő forrás (alapból a bemenet) |
 | `--line-map FÁJL` | JSON tömb: bemeneti sor → a `.dbg`-ben megnevezett sor |
+| `--analyze FÁJL` | A `--json` válasza és a listing: minden sor címe, mérete, fajtája, bájtjai és hibája, a címkék — sikertelen fordításnál is *(2.3)* |
 
 Kilépési kód: `0` lefordult, `1` fordítási hiba (`FÁJL:SOR: üzenet` a standard hibakimeneten, soronként egy hiba),
 `2` hibás használat.

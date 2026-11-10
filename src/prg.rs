@@ -233,6 +233,23 @@ pub fn build_prg_raw(program: &[Block]) -> Result<Built, CompileError> {
     Ok(Built { prg: prg_of(&image), sys_address: None, segments: image.segments(), entry: image.load })
 }
 
+/// The origin `build_prg_full` lays the program out at (always overridden): $0801 for a source
+/// with its own SYS line, the first ORG (or $C000) without the BASIC stub, else the code behind the
+/// stub. The live views (`vma::analyze`) show the addresses the PRG really has.
+pub fn code_origin(program: &[Block], basic_stub: bool) -> i64 {
+    let origin = origin_of(program);
+    if embedded_sys_address(program).is_some() {
+        return 0x0801;
+    }
+    if !basic_stub {
+        return if origin == 0x0801 { 0xC000 } else { origin };
+    }
+    let has_lower_org = program.iter().any(|b| matches!(&b.kind, Kind::Org { address } if parse_address_value(address).unwrap_or(65535.0) < 2049.0));
+    let raw_origin = if origin == 0x0801 && !has_lower_org { 0x080D } else { origin };
+    let stub_size = 2 + 2 + 1 + raw_origin.to_string().len() as i64 + 1 + 2;
+    raw_origin.max(0x0801 + stub_size)
+}
+
 /// `_buildAutostartPrgCore` with its `sysAddress`.
 pub fn build_prg_full(program: &[Block], basic_stub: bool) -> Result<Built, CompileError> {
     let origin = origin_of(program);

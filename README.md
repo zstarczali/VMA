@@ -1,6 +1,10 @@
 # VMA - Visual Macro Assembler
 
-Version 2.2.0.
+Version 2.3.0.
+
+2.3.0: `--analyze FILE` writes the app's analysis (the `--json` answer plus the listing of every line, also when
+the build fails): the C64 Visual Assembler has no compiler of its own any more and reads every view from it. A
+local label is taken as an absolute operand too (`JMP Second.lp`, `LDA .lp+1,X`); before, it was an invalid operand.
 
 2.2.0: `.u64_palette "file.vpl"`, `.u64_palette_color index, $RRGGBB` and `.u64_palette_reset` set the
 video palette of an Ultimate 64 / C64 Ultimate through its Command Interface (firmware 3.15+).

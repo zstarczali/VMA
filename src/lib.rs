@@ -74,14 +74,7 @@ impl BuildResult {
     /// deferred: [{type, address, end, sourceAddress, label}]}.
     pub fn to_json(&self) -> serde_json::Value {
         let lines: Vec<[i64; 4]> = self.info.lines.iter().map(|l| [l.address, l.size, l.skipped as i64, l.src_line.map_or(-1, |s| s as i64)]).collect();
-        let memory = self.memory.as_ref().map(|m| {
-            let deferred: Vec<serde_json::Value> = m
-                .deferred
-                .iter()
-                .map(|s| serde_json::json!({ "type": s.kind, "address": s.address, "end": s.end, "sourceAddress": s.source, "label": s.label }))
-                .collect();
-            serde_json::json!({ "code": m.code.map(|(s, e)| [s, e]), "regions": m.regions.iter().map(|&(s, e)| [s, e]).collect::<Vec<_>>(), "deferred": deferred })
-        });
+        let memory = self.memory.as_ref().map(memory_json);
         serde_json::json!({
             "ok": true,
             "prg": self.built.prg,
@@ -95,6 +88,16 @@ impl BuildResult {
             "memory": memory,
         })
     }
+}
+
+/// The memory panel's view as JSON: `code` [start, end] | null, `regions` [[start, end]], `deferred`.
+fn memory_json(m: &asm::MemoryInfo) -> serde_json::Value {
+    let deferred: Vec<serde_json::Value> = m
+        .deferred
+        .iter()
+        .map(|s| serde_json::json!({ "type": s.kind, "address": s.address, "end": s.end, "sourceAddress": s.source, "label": s.label }))
+        .collect();
+    serde_json::json!({ "code": m.code.map(|(s, e)| [s, e]), "regions": m.regions.iter().map(|&(s, e)| [s, e]).collect::<Vec<_>>(), "deferred": deferred })
 }
 
 /// The app's error answer: `error` / `line` (1-based) of the first error and `errors`: every
@@ -151,6 +154,75 @@ pub fn build_result(source: &str, options: &BuildOptions, files: &dyn FileProvid
     Ok(BuildResult { built, origin, info, symbols, debug, memory })
 }
 
+/// What the app's live views read of a source (`vma::analyze`): the build (or its errors) and the
+/// layout at the PRG's own addresses (`prg::code_origin`) with the bytes of every line — also when
+/// the build fails, so the views keep showing what compiles. `raw`: a Kick project's extra output
+/// (no stub, its first ORG). JSON: the build's answer (`BuildResult::to_json` / `error_json`) with
+/// `listing` [[address, size, flags, srcLine, fileLine, file, kind, name, bytes | null, error | null, value]]
+/// (flags: 1 = skipped, 2 = from a macro; -1 = none), `files` (the included files `file` indexes),
+/// `labels` [[name, value]] (the layout's labels, in order) and `listOrigin`.
+pub fn analyze(source: &str, options: &BuildOptions, files: &dyn FileProvider, source_path: &str, line_map: Option<&[i64]>) -> serde_json::Value {
+    let mut out = match build_result(source, options, files, source_path, line_map) {
+        Ok(r) => r.to_json(),
+        Err(e) => error_json(&e),
+    };
+    let mut program = parse::parse_expert_text(source);
+    files::load_assets(&mut program, files);
+    let origin = prg::code_origin(&program, options.basic_stub);
+    let mut assembler = asm::Assembler::new(&program);
+    let listed = assembler.listing(&program, origin, true);
+    let mut file_names: Vec<String> = Vec::new();
+    let listing: Vec<serde_json::Value> = match &listed {
+        Ok(lines) => lines
+            .iter()
+            .map(|l| {
+                let file = l.file.as_ref().map(|f| match file_names.iter().position(|n| n == f) {
+                    Some(i) => i as i64,
+                    None => {
+                        file_names.push(f.clone());
+                        file_names.len() as i64 - 1
+                    }
+                });
+                let flags = l.skipped as i64 | ((l.from_macro as i64) << 1);
+                let error = l.error.as_ref().map(|m| {
+                    let params: serde_json::Map<String, serde_json::Value> = m.params.iter().map(|(k, v)| (k.to_string(), serde_json::Value::from(v.as_str()))).collect();
+                    serde_json::json!({ "message": m.text, "key": m.key, "params": params })
+                });
+                serde_json::json!([
+                    l.address,
+                    l.size,
+                    flags,
+                    l.src_line.map_or(-1, |v| v as i64),
+                    l.file_line.map_or(-1, |v| v as i64),
+                    file.unwrap_or(-1),
+                    l.kind,
+                    l.name,
+                    l.bytes,
+                    error,
+                    l.value
+                ])
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    let labels: Vec<(String, f64)> = assembler.labels.iter().filter(|(_, v)| v.is_finite()).map(|(n, v)| (n.to_string(), v)).collect();
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("listing".into(), serde_json::Value::from(listing));
+        obj.insert("files".into(), serde_json::json!(file_names));
+        obj.insert("labels".into(), serde_json::json!(labels));
+        obj.insert("listOrigin".into(), serde_json::json!(origin));
+        // the memory panel also while the build fails
+        if obj.get("memory").map_or(true, |m| m.is_null()) {
+            let memory = asm::Assembler::new(&program).memory_info(&program, prg::origin_of(&program)).ok().map(|m| memory_json(&m));
+            obj.insert("memory".into(), memory.unwrap_or(serde_json::Value::Null));
+        }
+        if let Err(e) = &listed {
+            obj.insert("listingError".into(), error_json(e));
+        }
+    }
+    out
+}
+
 /// VMA source → the image alone at its first ORG (no BASIC stub): a Kick project's extra output.
 pub fn build_raw(source: &str, files: &dyn FileProvider) -> Result<Built, CompileError> {
     let mut program = parse::parse_expert_text(source);
@@ -195,6 +267,43 @@ mod tests {
         let low = build_result("; Entry point: $0400\n* = $0400\n    rts\n",&BuildOptions { basic_stub: true }, &NoFiles, "a.asm", None).unwrap();
         assert_eq!(low.built.sys_address, Some(0x080D));
         assert_eq!((low.built.entry, low.built.segments.clone()), (0x0400, vec![(0x0400, vec![0x60])]));
+    }
+
+    #[test]
+    fn local_labels_as_absolute_operands() {
+        // .lp in the scope of First / Second; Second.lp from outside; with an offset and an index
+        let src = "* = $1000\nFirst:\n.lp: nop\n    jmp .lp\nSecond:\n.lp: nop\n    jmp Second.lp\n    lda Second.lp+1\n    lda .lp+1,x\n";
+        let prg = build(src, &BuildOptions { basic_stub: false }).unwrap();
+        assert_eq!(&prg[2..], &[0xEA, 0x4C, 0x00, 0x10, 0xEA, 0x4C, 0x04, 0x10, 0xAD, 0x05, 0x10, 0xBD, 0x05, 0x10]);
+    }
+
+    #[test]
+    fn analyze_lists_the_bytes_also_when_a_line_fails() {
+        let src = "* = $1000
+start:
+    lda #$01
+    jmp nowhere
+    .byte 1, 2
+";
+        let v = analyze(src, &BuildOptions { basic_stub: false }, &NoFiles, "a.asm", None);
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["listOrigin"], 0x1000);
+        let rows = v["listing"].as_array().unwrap();
+        let row = |line: i64| rows.iter().find(|r| r[3] == line && r[6] != "org").unwrap().clone();
+        assert_eq!(row(1)[6], "label");
+        assert_eq!(row(1)[7], "start");
+        assert_eq!(row(2)[8], serde_json::json!([0xA9, 0x01]));
+        assert_eq!(row(2)[6], "instr");
+        assert!(row(3)[8].is_null());
+        assert!(row(3)[9]["message"].as_str().unwrap().len() > 0);
+        assert_eq!(row(4)[6], "data");
+        assert_eq!(row(4)[0], 0x1005);
+        assert_eq!(row(1)[10], 0x1000);
+        assert!(v["labels"].as_array().unwrap().iter().any(|l| l[0] == "start" && l[1] == 4096.0));
+        // with the stub the code lies behind the SYS line, as in the PRG
+        let ok = analyze("    rts
+", &BuildOptions { basic_stub: true }, &NoFiles, "a.asm", None);
+        assert_eq!((ok["ok"].clone(), ok["listOrigin"].clone()), (serde_json::json!(true), serde_json::json!(0x080D)));
     }
 
     #[test]
