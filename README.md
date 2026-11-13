@@ -1,5 +1,30 @@
 # VMA - Visual Macro Assembler
 
+<!-- badges:start -->
+<p align="center">
+  <a href="https://www.c64va.pro/"><img src="https://img.shields.io/badge/website-c64va.pro-e05d44?style=flat" alt="Website"></a>
+  <a href="https://github.com/zstarczali/VMA/releases/latest"><img src="https://img.shields.io/github/v/release/zstarczali/VMA?label=version&color=4c1" alt="Version"></a>
+  <a href="https://github.com/zstarczali/VMA/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/zstarczali/VMA/release.yml?branch=main&label=build" alt="Build"></a>
+  <a href="https://github.com/zstarczali/VMA/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
+  <a href="https://www.c64va.pro/register/donate.php"><img src="https://img.shields.io/badge/donate-PayPal-00457C?logo=paypal&logoColor=white" alt="Donate"></a>
+</p>
+<p align="center">
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-library%20%2B%20CLI-B7410E?logo=rust&logoColor=white" alt="Rust"></a>
+  <a href="https://en.wikipedia.org/wiki/Commodore_64"><img src="https://img.shields.io/badge/target-C64%20%2F%206502-6c5eb5?logo=commodore&logoColor=white" alt="Target: C64 / 6502"></a>
+  <a href="https://www.rust-lang.org/tools/install"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555" alt="Platforms"></a>
+  <a href="https://github.com/zstarczali/VMA/commits/main"><img src="https://img.shields.io/github/last-commit/zstarczali/VMA/main" alt="Last commit"></a>
+  <a href="https://github.com/zstarczali/VMA/graphs/commit-activity"><img src="https://img.shields.io/github/commit-activity/m/zstarczali/VMA" alt="Commit activity"></a>
+  <a href="https://github.com/zstarczali/VMA/issues"><img src="https://img.shields.io/github/issues/zstarczali/VMA" alt="Issues"></a>
+  <a href="https://github.com/zstarczali/VMA/stargazers"><img src="https://img.shields.io/github/stars/zstarczali/VMA?style=flat" alt="Stars"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/zstarczali/VMA/blob/main/docs/VMA-Manual.md"><img src="https://img.shields.io/badge/manual-English-ddd" alt="Manual (English)"></a>
+  <a href="https://github.com/zstarczali/VMA/blob/main/docs/VMA-Manual.hu.md"><img src="https://img.shields.io/badge/k%C3%A9zik%C3%B6nyv-Magyar-ddd" alt="Kézikönyv (magyar)"></a>
+  <a href="https://www.c64va.pro/"><img src="https://img.shields.io/badge/used%20by-C64%20Visual%20Assembler-8a2be2" alt="C64 Visual Assembler"></a>
+  <a href="https://github.com/zstarczali/UltimateBasic"><img src="https://img.shields.io/badge/sibling-Ultimate%20Basic-8a2be2" alt="Ultimate Basic"></a>
+</p>
+<!-- badges:end -->
+
 Version 2.3.0.
 
 2.3.0: `--analyze FILE` writes the app's analysis (the `--json` answer plus the listing of every line, also when
