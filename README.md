@@ -1,5 +1,7 @@
 # VMA - Visual Macro Assembler
-
+<p align="center">
+  <img src="assets/logo.png" alt="Visual Macro Assembler C64 banner" width="30%">
+</p>
 <!-- badges:start -->
 <p align="center">
   <a href="https://www.c64va.pro/"><img src="https://img.shields.io/badge/website-c64va.pro-e05d44?style=flat" alt="Website"></a>
@@ -41,9 +43,6 @@ the code.
 The 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler), in Rust:
 a library (`vma`) and a command-line compiler (`vma build`).
 
-<p align="center">
-  <img src="assets/logo.png" alt="Visual Macro Assembler C64 banner" width="30%">
-</p>
 
 It assembles the VMA language — the Expert-mode text of Visual Assembler — byte for byte like the
 app's JavaScript compiler: instructions (with the NMOS illegal opcodes and their aliases), labels
