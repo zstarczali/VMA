@@ -7,7 +7,7 @@
   <a href="https://www.c64va.pro/"><img src="https://img.shields.io/badge/website-c64va.pro-e05d44?style=flat" alt="Website"></a>
   <a href="https://github.com/zstarczali/VMA/releases/latest"><img src="https://img.shields.io/github/v/release/zstarczali/VMA?label=version&color=4c1" alt="Version"></a>
   <a href="https://github.com/zstarczali/VMA/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/zstarczali/VMA/release.yml?branch=main&label=build" alt="Build"></a>
-  <a href="https://github.com/zstarczali/VMA/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
+  <a href="https://github.com/zstarczali/VMA/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
   <a href="https://www.c64va.pro/register/donate.php"><img src="https://img.shields.io/badge/donate-PayPal-00457C?logo=paypal&logoColor=white" alt="Donate"></a>
 </p>
 <p align="center">
@@ -99,4 +99,4 @@ the Kick fixtures) is built by the JavaScript compiler and by this CLI (`VMA_BIN
 
 ## License
 
-GPL-3.0-or-later, like C64 Visual Assembler.
+MIT — see [LICENSE](LICENSE).
