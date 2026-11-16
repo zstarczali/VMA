@@ -3,7 +3,7 @@ name = "vma"
 version = "2.3.0"
 edition = "2021"
 description = "Visual Macro Assembler (VMA) compiler of C64 Visual Assembler"
-license = "GPL-3.0-or-later"
+license = "MIT"
 
 [lib]
 name = "vma"
