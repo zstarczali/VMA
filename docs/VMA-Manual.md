@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.3.0**
+**Language manual · version 2.4.0**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -1120,37 +1120,37 @@ Like **MERGE in BASIC** — pulls in another file and expands it inline at this 
 
 Two file kinds are supported:
 - **Plain assembly source** (`.inc`, `.asm`, `.s`) — the file is read as VMA source. It is read again at every build, so you can edit it with any editor.
-- **Visual Assembler project** (`.json`) — the blocks of a C64 Visual Assembler block program.
+- **Visual Assembler project** (`.vas`, formerly `.json`) — the blocks of a C64 Visual Assembler block program.
 
 | Argument | Description |
 |---|---|
-| File | A `.inc` / `.asm` / `.s` source or a `.json` Visual Assembler project |
+| File | A `.inc` / `.asm` / `.s` source or a `.vas` (`.json`) Visual Assembler project |
 | Load address (optional) | If set (hex, e.g. `C000`), the included code is placed at that address — an `ORG` is put in front of it, and the included file's own ORGs are ignored. Without it the included file's own ORGs control placement. |
 
 **Syntax:**
 ```
-.include "library.json"
+.include "library.vas"
 .include "macros.inc", $1500
 .include "sprites.asm"
 ```
 
-- Give the **file extension** — a bare name like `.include "macros"` is treated as `.include "macros.json"`.
+- Give the **file extension** — a bare name like `.include "macros"` is treated as `.include "macros.vas"`. When a `.vas` or `.json` file is not found, the same name with the other extension is tried.
 - Path resolution: next to the source first, then in every search folder (the CLI's `--base-dir` / `--search`); a path written on another machine falls back to its bare file name. A missing include is not an error — the build goes on without it.
 
 **Generated code (no address override):**
 ```
-    ; .include "library.json"
+    ; .include "library.vas"
     ... (the included code follows)
 ```
 
 **Generated code (with load address `C000`):**
 ```
-    ; .include "library.json" @ $C000
+    ; .include "library.vas" @ $C000
     *=$C000
     ... (the included code follows)
 ```
 
-> **Tip:** Use INCLUDE to build reusable subroutine libraries that you can share across projects. `.inc`/`.asm`/`.s` files are best when you want to edit the library in a plain text editor or share it with other 6502 assemblers; `.json` when the library is a Visual Assembler block program. Set a load address when the library has no ORG of its own, or when you want to override its default placement.
+> **Tip:** Use INCLUDE to build reusable subroutine libraries that you can share across projects. `.inc`/`.asm`/`.s` files are best when you want to edit the library in a plain text editor or share it with other 6502 assemblers; `.vas` when the library is a Visual Assembler block program. Set a load address when the library has no ORG of its own, or when you want to override its default placement.
 
 > **2.1:** an include that is not found is an error, and so is a file that includes itself (directly or further down). An included file's own `.include`, `.incbin` and `.sid` lines are loaded too, relative to its own folder, and its macro calls are expanded — up to 16 levels deep.
 

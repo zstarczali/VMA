@@ -27,7 +27,11 @@
 </p>
 <!-- badges:end -->
 
-Version 2.3.0.
+Version 2.4.0.
+
+2.4.0: a block program is a `.vas` file (formerly `.json`): `.include "macros"` looks for `macros.vas`, and
+when a `.vas` or `.json` file is not found, the same name with the other extension is tried, so older projects keep
+building.
 
 2.3.0: `--analyze FILE` writes the app's analysis (the `--json` answer plus the listing of every line, also when
 the build fails): the C64 Visual Assembler has no compiler of its own any more and reads every view from it. A
