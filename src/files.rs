@@ -58,6 +58,15 @@ impl FileProvider for DirFiles {
                     if p.is_file() {
                         return std::fs::read(&p).map(|b| (p.clone(), b)).map_err(|e| format!("{}: {e}", p.display()));
                     }
+                    // A block program is `.vas` (formerly `.json`): the other extension is tried too
+                    let twin = match p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+                        Some("vas") => Some(p.with_extension("json")),
+                        Some("json") => Some(p.with_extension("vas")),
+                        _ => None,
+                    };
+                    if let Some(t) = twin.filter(|t| t.is_file()) {
+                        return std::fs::read(&t).map(|b| (t.clone(), b)).map_err(|e| format!("{}: {e}", t.display()));
+                    }
                 }
             }
         }
@@ -83,9 +92,9 @@ pub fn parse_sid(buf: &[u8]) -> Result<(u16, u16, u16, Vec<u8>), String> {
     Ok((load, be(10), be(12), data))
 }
 
-/// The blocks of an included file: a `.json` block program, or VMA source (`.asm`, `.inc`, `.s`).
+/// The blocks of an included file: a `.vas` (or `.json`) block program, or VMA source (`.asm`, `.inc`, `.s`).
 fn include_blocks(path: &Path, bytes: &[u8], line: usize) -> Result<Vec<Block>, String> {
-    let json = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    let json = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("vas") || e.eq_ignore_ascii_case("json"));
     let mut blocks = if json {
         let v: Value = serde_json::from_slice(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         v["program"].as_array().map(|p| p.iter().map(json_block).collect()).unwrap_or_default()
@@ -210,7 +219,7 @@ fn load_assets_at(program: &mut [Block], files: &dyn FileProvider, depth: usize,
             if file.trim().is_empty() {
                 continue;
             }
-            match files.load(file, &[".json", ".asm", ".inc", ".s"]) {
+            match files.load(file, &[".vas", ".json", ".asm", ".inc", ".s"]) {
                 Ok((path, bytes)) => {
                     // `a/./b` → `a\b` as path.join gives it
                     let normalized = path.components().collect::<PathBuf>();

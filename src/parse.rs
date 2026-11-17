@@ -746,7 +746,7 @@ fn size_token(raw: &str) -> String {
 fn memory_macro(line: &str) -> Option<Kind> {
     if let Some(c) = regex!(r#"(?i)^\.include\s+"([^"]*)"\s*(?:,\s*\$([0-9A-Fa-f]{1,4}))?\s*$"#).captures(line) {
         let name = c[1].to_string();
-        let file = if name.is_empty() || regex!(r"(?i)\.(json|inc|asm|s)$").is_match(&name) { name } else { format!("{name}.json") };
+        let file = if name.is_empty() || regex!(r"(?i)\.(vas|json|inc|asm|s)$").is_match(&name) { name } else { format!("{name}.vas") };
         return Some(Kind::Include { file, addr: c.get(2).map(|m| m.as_str().to_uppercase()).unwrap_or_default(), blocks: Vec::new(), path: String::new(), error: None });
     }
     if let Some(c) = regex!(r#"(?i)^\.sid\s+"([^"]*)"\s*(?:,\s*\$([0-9A-Fa-f]{1,4}))?\s*$"#).captures(line) {

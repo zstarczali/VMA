@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.3.0-s verzió**
+**Nyelvi kézikönyv · 2.4.0-s verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -1121,37 +1121,37 @@ Mint a **MERGE BASIC-ben** — beemel egy másik fájlt, és inline kifejti ezen
 
 Kétféle fájl támogatott:
 - **Sima assembly forrás** (`.inc`, `.asm`, `.s`) — VMA forrásként olvasódik. Minden fordításkor újra beolvasódik, így bármilyen szerkesztővel szerkesztheted.
-- **Visual Assembler projekt** (`.json`) — a C64 Visual Assembler blokkprogramjának blokkjai.
+- **Visual Assembler projekt** (`.vas`, korábban `.json`) — a C64 Visual Assembler blokkprogramjának blokkjai.
 
 | Argumentum | Leírás |
 |---|---|
-| File | Egy `.inc` / `.asm` / `.s` forrás vagy egy `.json` Visual Assembler projekt |
+| File | Egy `.inc` / `.asm` / `.s` forrás vagy egy `.vas` (`.json`) Visual Assembler projekt |
 | Load address (opcionális) | Ha beállított (hex, pl. `C000`), a beemelt kód arra a címre kerül — egy `ORG` kerül elé, a beemelt fájl saját ORG-jai pedig nem számítanak. Nélküle a beemelt fájl saját ORG-jai döntik el az elhelyezést. |
 
 **Szintaxis:**
 ```
-.include "library.json"
+.include "library.vas"
 .include "macros.inc", $1500
 .include "sprites.asm"
 ```
 
-- Add meg a **fájlkiterjesztést** — egy csupasz név, mint a `.include "macros"`, `.include "macros.json"`-ként kezelődik.
+- Add meg a **fájlkiterjesztést** — egy csupasz név, mint a `.include "macros"`, `.include "macros.vas"`-ként kezelődik. Ha egy `.vas` vagy `.json` fájl nincs meg, ugyanaz a név a másik kiterjesztéssel is próbálkozik.
 - Útvonal-feloldás: először a forrás mellett, majd minden keresési mappában (a CLI `--base-dir` / `--search` kapcsolói); egy más gépen írt útvonal a puszta fájlnévre esik vissza. A nem található include nem hiba — a fordítás nélküle megy tovább.
 
 **Generált kód (nincs cím-felülírás):**
 ```
-    ; .include "library.json"
+    ; .include "library.vas"
     ... (a beemelt kód következik)
 ```
 
 **Generált kód (`C000` betöltési címmel):**
 ```
-    ; .include "library.json" @ $C000
+    ; .include "library.vas" @ $C000
     *=$C000
     ... (a beemelt kód következik)
 ```
 
-> **Tipp:** használd az INCLUDE-ot újrahasználható szubrutin-könyvtárak építésére, amelyeket megoszthatsz projektek közt. Az `.inc`/`.asm`/`.s` fájlok akkor a legjobbak, ha sima szövegszerkesztőben akarod szerkeszteni a könyvtárat, vagy más 6502 assemblerekkel megosztani; a `.json` akkor, ha a könyvtár Visual Assembler blokkprogram. Állíts be betöltési címet, ha a könyvtárnak nincs saját ORG-ja, vagy ha felül akarod írni az alapértelmezett elhelyezését.
+> **Tipp:** használd az INCLUDE-ot újrahasználható szubrutin-könyvtárak építésére, amelyeket megoszthatsz projektek közt. Az `.inc`/`.asm`/`.s` fájlok akkor a legjobbak, ha sima szövegszerkesztőben akarod szerkeszteni a könyvtárat, vagy más 6502 assemblerekkel megosztani; a `.vas` akkor, ha a könyvtár Visual Assembler blokkprogram. Állíts be betöltési címet, ha a könyvtárnak nincs saját ORG-ja, vagy ha felül akarod írni az alapértelmezett elhelyezését.
 
 > **2.1:** a nem található include hiba, és az is, ha egy fájl önmagát emeli be (közvetlenül vagy mélyebben). A beemelt fájl saját `.include`, `.incbin` és `.sid` sorai is betöltődnek a saját mappájához képest, és a makróhívásai is kibomlanak — legfeljebb 16 szint mélyen.
 
