@@ -27,11 +27,13 @@ pub use prg::Built;
 pub struct BuildOptions {
     /// `10 SYS…` BASIC line in front of the code (the app's BASIC SYS toggle).
     pub basic_stub: bool,
+    /// a build report: `BuildResult::log` (`log` in the JSON answer, `vma build -v`).
+    pub verbose: bool,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        BuildOptions { basic_stub: true }
+        BuildOptions { basic_stub: true, verbose: false }
     }
 }
 
@@ -64,9 +66,71 @@ pub struct BuildResult {
     pub debug: debug::DebugFiles,
     /// the memory panel's view (`getMemoryUsage`); None when that layout fails
     pub memory: Option<asm::MemoryInfo>,
+    /// what the report counts of the source
+    pub stats: BuildStats,
+    /// the build report (`report`) when `BuildOptions::verbose`, else empty
+    pub log: Vec<String>,
+}
+
+/// The source's numbers in the build report.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BuildStats {
+    pub source_lines: usize,
+    /// the included files, in the order they are first used
+    pub files: Vec<String>,
+    pub constants: usize,
+    pub macros: usize,
+    pub defines: usize,
+    /// lines left out by conditional assembly (`.if` / `.ifdef` …)
+    pub skipped_lines: usize,
+}
+
+/// The report lines of a built program: BASIC stub, entry, segments and the PRG.
+pub fn built_report(built: &Built) -> Vec<String> {
+    let a = asm::format_address;
+    let mut out = Vec::new();
+    out.push(match built.sys_address {
+        Some(sys) => format!("BASIC stub: 10 SYS {sys} ({})", a(sys)),
+        None => "BASIC stub: none".to_string(),
+    });
+    out.push(format!("Entry: {}", a(built.entry)));
+    let total: usize = built.segments.iter().map(|(_, bytes)| bytes.len()).sum();
+    out.push(format!("Segments: {} ({} bytes)", built.segments.len(), total));
+    for (start, bytes) in &built.segments {
+        let end = start + (bytes.len() as i64).max(1) - 1;
+        out.push(format!("  {}-{}  {} bytes", a(*start), a(end), bytes.len()));
+    }
+    if built.prg.len() >= 2 {
+        let load = built.prg[0] as i64 | (built.prg[1] as i64) << 8;
+        let data = built.prg.len() as i64 - 2;
+        out.push(format!("PRG: {} bytes, load address {}, end {}", built.prg.len(), a(load), a(load + data.max(1) - 1)));
+    }
+    out
 }
 
 impl BuildResult {
+    /// The build report (`vma build -v`): the source's numbers, the layout and the PRG.
+    pub fn report(&self) -> Vec<String> {
+        let s = &self.stats;
+        let mut out = vec![format!("VMA {}", env!("CARGO_PKG_VERSION"))];
+        let files = match s.files.len() {
+            0 => String::new(),
+            n => format!(", {n} included file{} ({})", if n == 1 { "" } else { "s" }, s.files.join(", ")),
+        };
+        out.push(format!("Source: {} lines{files}", s.source_lines));
+        out.push(format!("Symbols: {}, constants: {}, macros: {}, defines: {}", self.symbols.len(), s.constants, s.macros, s.defines));
+        if s.skipped_lines > 0 {
+            out.push(format!("Conditional assembly: {} lines skipped", s.skipped_lines));
+        }
+        out.extend(built_report(&self.built));
+        if let Some(m) = &self.memory {
+            for d in &m.deferred {
+                out.push(format!("Deferred: {}", d.label));
+            }
+        }
+        out
+    }
+
     /// The app's answer (`vma_build` with a source path): `prg`, `sysAddress`, `debugOrigin`,
     /// `sidecars` {sym, vs, dbg}, `symbols` [[name, address]] and `lines` [[address, size,
     /// skipped 0/1, line of the source or -1 for an included block]], `segments` [[address, bytes]]
@@ -75,7 +139,7 @@ impl BuildResult {
     pub fn to_json(&self) -> serde_json::Value {
         let lines: Vec<[i64; 4]> = self.info.lines.iter().map(|l| [l.address, l.size, l.skipped as i64, l.src_line.map_or(-1, |s| s as i64)]).collect();
         let memory = self.memory.as_ref().map(memory_json);
-        serde_json::json!({
+        let mut answer = serde_json::json!({
             "ok": true,
             "prg": self.built.prg,
             "sysAddress": self.built.sys_address,
@@ -86,7 +150,12 @@ impl BuildResult {
             "segments": self.built.segments,
             "entry": self.built.entry,
             "memory": memory,
-        })
+        });
+        // the build report only when it was asked for (BuildOptions::verbose)
+        if !self.log.is_empty() {
+            answer["log"] = serde_json::json!(self.log);
+        }
+        answer
     }
 }
 
@@ -150,8 +219,22 @@ pub fn build_result(source: &str, options: &BuildOptions, files: &dyn FileProvid
         }
     };
     let symbols = debug::sorted_symbols(&info);
-    let memory = asm::Assembler::new(&program).memory_info(&program, prg::origin_of(&program)).ok();
-    Ok(BuildResult { built, origin, info, symbols, debug, memory })
+    let mut assembler = asm::Assembler::new(&program);
+    let memory = assembler.memory_info(&program, prg::origin_of(&program)).ok();
+    let (constants, macros, defines) = assembler.counts();
+    let mut files: Vec<String> = Vec::new();
+    for f in info.lines.iter().filter_map(|l| l.file.as_ref()) {
+        if !files.contains(f) {
+            files.push(f.clone());
+        }
+    }
+    let skipped_lines = info.lines.iter().filter(|l| l.skipped && l.src_line.is_some()).count();
+    let stats = BuildStats { source_lines: source.lines().count(), files, constants, macros, defines, skipped_lines };
+    let mut result = BuildResult { built, origin, info, symbols, debug, memory, stats, log: Vec::new() };
+    if options.verbose {
+        result.log = result.report();
+    }
+    Ok(result)
 }
 
 /// What the app's live views read of a source (`vma::analyze`): the build (or its errors) and the
@@ -245,7 +328,7 @@ mod tests {
 
     #[test]
     fn build_result_lines_and_symbols() {
-        let r = build_result("* = $1000\nstart:\n    lda #$01\n    rts\n", &BuildOptions { basic_stub: false }, &NoFiles, "a.asm", None).unwrap();
+        let r = build_result("* = $1000\nstart:\n    lda #$01\n    rts\n", &BuildOptions { basic_stub: false, ..Default::default() }, &NoFiles, "a.asm", None).unwrap();
         assert_eq!(r.origin, 0x1000);
         assert_eq!(r.symbols, vec![("start".to_string(), 0x1000)]);
         let code: Vec<(i64, i64, Option<usize>)> = r.info.lines.iter().filter(|l| l.size > 0).map(|l| (l.address, l.size, l.src_line)).collect();
@@ -255,7 +338,7 @@ mod tests {
     #[test]
     fn segments_entry_and_memory_view() {
         let src = "* = $1000\n    lda #$01\n    .rawbytes $2000, $AA, $BB\n    .text 1, 2, \"HI\"\n* = $1100\n    rts\n";
-        let r = build_result(src, &BuildOptions { basic_stub: false }, &NoFiles, "a.asm", None).unwrap();
+        let r = build_result(src, &BuildOptions { basic_stub: false, ..Default::default() }, &NoFiles, "a.asm", None).unwrap();
         assert_eq!(r.built.segments, vec![(0x1000, vec![0xA9, 0x01, 0xA9, 0x08, 0x8D, 0x51, 0x04, 0xA9, 0x09, 0x8D, 0x52, 0x04]), (0x1100, vec![0x60]), (0x2000, vec![0xAA, 0xBB])]);
         assert_eq!(r.built.entry, 0x1000);
         let m = r.memory.unwrap();
@@ -264,7 +347,7 @@ mod tests {
         let d: Vec<(&str, i64, i64, &str)> = m.deferred.iter().map(|s| (s.kind, s.address, s.end, s.label.as_str())).collect();
         assert_eq!(d, vec![("text", 0x451, 0x452, "TEXT \"HI\" -> screen (1, 2)"), ("rawbytes", 0x2000, 0x2001, "RAWBYTES $AA, $BB -> $2000")]);
         // behind a relocating loader the SYS line starts the loader, the entry is the program's own
-        let low = build_result("; Entry point: $0400\n* = $0400\n    rts\n",&BuildOptions { basic_stub: true }, &NoFiles, "a.asm", None).unwrap();
+        let low = build_result("; Entry point: $0400\n* = $0400\n    rts\n",&BuildOptions { basic_stub: true, ..Default::default() }, &NoFiles, "a.asm", None).unwrap();
         assert_eq!(low.built.sys_address, Some(0x080D));
         assert_eq!((low.built.entry, low.built.segments.clone()), (0x0400, vec![(0x0400, vec![0x60])]));
     }
@@ -273,7 +356,7 @@ mod tests {
     fn local_labels_as_absolute_operands() {
         // .lp in the scope of First / Second; Second.lp from outside; with an offset and an index
         let src = "* = $1000\nFirst:\n.lp: nop\n    jmp .lp\nSecond:\n.lp: nop\n    jmp Second.lp\n    lda Second.lp+1\n    lda .lp+1,x\n";
-        let prg = build(src, &BuildOptions { basic_stub: false }).unwrap();
+        let prg = build(src, &BuildOptions { basic_stub: false, ..Default::default() }).unwrap();
         assert_eq!(&prg[2..], &[0xEA, 0x4C, 0x00, 0x10, 0xEA, 0x4C, 0x04, 0x10, 0xAD, 0x05, 0x10, 0xBD, 0x05, 0x10]);
     }
 
@@ -285,7 +368,7 @@ start:
     jmp nowhere
     .byte 1, 2
 ";
-        let v = analyze(src, &BuildOptions { basic_stub: false }, &NoFiles, "a.asm", None);
+        let v = analyze(src, &BuildOptions { basic_stub: false, ..Default::default() }, &NoFiles, "a.asm", None);
         assert_eq!(v["ok"], false);
         assert_eq!(v["listOrigin"], 0x1000);
         let rows = v["listing"].as_array().unwrap();
@@ -302,13 +385,13 @@ start:
         assert!(v["labels"].as_array().unwrap().iter().any(|l| l[0] == "start" && l[1] == 4096.0));
         // with the stub the code lies behind the SYS line, as in the PRG
         let ok = analyze("    rts
-", &BuildOptions { basic_stub: true }, &NoFiles, "a.asm", None);
+", &BuildOptions { basic_stub: true, ..Default::default() }, &NoFiles, "a.asm", None);
         assert_eq!((ok["ok"].clone(), ok["listOrigin"].clone()), (serde_json::json!(true), serde_json::json!(0x080D)));
     }
 
     #[test]
     fn line_map_names_the_mapped_lines_in_the_dbg() {
-        let opts = BuildOptions { basic_stub: false };
+        let opts = BuildOptions { basic_stub: false, ..Default::default() };
         let plain = build_result(SRC, &opts, &NoFiles, "a.asm", None).unwrap();
         assert!(plain.debug.dbg.contains("$1000,$1001,0,2,1,2,1"));
         let mapped = build_result(SRC, &opts, &NoFiles, "a.asm", Some(&[-1, 10, 20])).unwrap();
@@ -320,5 +403,41 @@ start:
         assert!(none.debug.dbg.contains("$1002,$1002,0,1,1,1,1"));
         // the layout's own lines stay the source's
         assert_eq!(mapped.info.lines.iter().find(|l| l.size == 2).unwrap().src_line, Some(1));
+    }
+
+    #[test]
+    fn verbose_build_report() {
+        let src = ".const SCREEN = $0400\n.define DEBUG\n.macro border(c)\n    lda #c\n    sta $d020\n.endm\n* = $1000\nstart:\n    border(2)\n    .text 1, 2, \"HI\"\n* = $2000\n    .byte 1,2,3\n    rts\n";
+        let quiet = build_result(src, &BuildOptions { basic_stub: false, ..Default::default() }, &NoFiles, "a.asm", None).unwrap();
+        assert!(quiet.log.is_empty(), "no report unless it is asked for");
+        assert!(quiet.to_json().get("log").is_none());
+        let r = build_result(src, &BuildOptions { basic_stub: false, verbose: true }, &NoFiles, "a.asm", None).unwrap();
+        assert_eq!(r.stats, BuildStats { source_lines: 13, files: vec![], constants: 1, macros: 1, defines: 1, skipped_lines: 0 });
+        assert_eq!(r.log, r.report());
+        assert_eq!(r.log[0], format!("VMA {}", env!("CARGO_PKG_VERSION")));
+        let text = r.log.join("\n");
+        for want in [
+            "Source: 13 lines",
+            "Symbols: 2, constants: 1, macros: 1, defines: 1",
+            "BASIC stub: none",
+            "Entry: $1000",
+            "Deferred: TEXT \"HI\" -> screen (1, 2)",
+        ] {
+            assert!(text.contains(want), "{want} in\n{text}");
+        }
+        // every segment with its range and size, and their sum
+        let total: usize = r.built.segments.iter().map(|(_, b)| b.len()).sum();
+        assert!(text.contains(&format!("Segments: {} ({total} bytes)", r.built.segments.len())), "{text}");
+        for (start, bytes) in &r.built.segments {
+            let line = format!("  ${start:04X}-${:04X}  {} bytes", start + bytes.len() as i64 - 1, bytes.len());
+            assert!(text.contains(&line), "{line} in\n{text}");
+        }
+        assert!(text.contains(&format!("PRG: {} bytes, load address $1000", r.built.prg.len())), "{text}");
+        assert_eq!(r.to_json()["log"], serde_json::json!(r.log));
+        // the PRG does not change with the report
+        assert_eq!(r.built.prg, quiet.built.prg);
+        // with the stub
+        let stub = build_result("    rts\n", &BuildOptions { basic_stub: true, verbose: true }, &NoFiles, "a.asm", None).unwrap();
+        assert!(stub.log.contains(&"BASIC stub: 10 SYS 2061 ($080D)".to_string()), "{:?}", stub.log);
     }
 }

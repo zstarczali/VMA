@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Language manual · version 2.4.0**
+**Language manual · version 2.5.0**
 
 VMA is the 6502 / 6510 assembler of [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) — the
 language of its Expert mode and of the text its block programs are written as. This manual describes the language;
@@ -2893,6 +2893,7 @@ vma --version
 | `--json FILE` | The build as JSON: PRG, SYS address, symbols, laid-out lines, written segments, memory view — or every error with its line |
 | `--source-path NAME` | The main source the `.dbg` names (default: the input) |
 | `--line-map FILE` | JSON array: input line → the line the `.dbg` names |
+| `-v`, `--verbose` | A build report on standard output: source lines and included files, the number of symbols, constants, macros and defines, the lines skipped by conditional assembly, the BASIC stub, the entry, every segment's range and size, the deferred writes and the PRG's size and load address (with `--json` also as `log`) |
 | `--analyze FILE` | The `--json` answer plus the listing: every line with its address, size, kind, bytes and error, the labels — written also when the build fails *(2.3)* |
 
 Exit status: `0` built, `1` compile error (`FILE:LINE: message` on standard error, one line per error), `2` bad usage.
@@ -2900,6 +2901,7 @@ Exit status: `0` built, `1` compile error (`FILE:LINE: message` on standard erro
 ```
 vma build game.asm -o game.prg --debug
 vma build game.asm --no-basic-stub --search ../assets
+vma build game.asm -v                                # with a build report
 vma build game.asm --crt game.crt                    # the cartridge only
 vma build game.asm --d64 --add music.prg             # game.d64 with GAME and MUSIC
 ```

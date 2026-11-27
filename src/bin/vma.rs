@@ -7,7 +7,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: vma build <input.asm> [-o out.prg] [--base-dir DIR] [--search DIR]... [--no-basic-stub] [--raw]
                  [--crt FILE] [--crt-name NAME] [--d64 [FILE]] [--add FILE]... [--disk-name NAME]
                  [--sym FILE] [--vs FILE] [--dbg FILE] [--debug] [--json FILE] [--analyze FILE]
-                 [--source-path NAME] [--line-map FILE]
+                 [--source-path NAME] [--line-map FILE] [-v | --verbose]
        vma --help | --version";
 
 const HELP: &str = "vma — the VMA (Visual Macro Assembler) compiler of C64 Visual Assembler
@@ -48,6 +48,10 @@ build options:
   --source-path NAME  the main source the .dbg names (default: the input)
   --line-map FILE   JSON array: input line -> the line the .dbg names (-1: none,
                     -2: a further line of the previous line's block)
+  -v, --verbose     a build report on stdout: source lines, included files, labels /
+                    constants / macros / defines, lines skipped by conditional assembly,
+                    the BASIC stub, the entry, every segment's range and size, the
+                    deferred writes and the PRG (with --json also as log)
 
 exit status: 0 = built, 1 = compile error (FILE:LINE: message on stderr), 2 = bad usage";
 
@@ -138,6 +142,7 @@ fn main() -> ExitCode {
             "--add" => add.extend(value),
             "--disk-name" => disk_name = value.map(|v| v.display().to_string()).unwrap_or_default(),
             "--no-basic-stub" => options.basic_stub = false,
+            "-v" | "--verbose" => options.verbose = true,
             "--help" | "-h" => {
                 println!("{HELP}");
                 return ExitCode::SUCCESS;
@@ -230,6 +235,12 @@ fn main() -> ExitCode {
                 if let Err(code) = write_media(&built.prg, None) {
                     return code;
                 }
+                if options.verbose {
+                    println!("VMA {}", env!("CARGO_PKG_VERSION"));
+                    for line in vma::built_report(&built) {
+                        println!("{line}");
+                    }
+                }
                 let answer = serde_json::json!({ "ok": true, "prg": built.prg, "segments": built.segments, "entry": built.entry }).to_string();
                 let jobs: [(Option<&PathBuf>, &[u8]); 2] = [(prg_path, &built.prg), (json.as_ref(), answer.as_bytes())];
                 for (path, bytes) in jobs {
@@ -244,7 +255,7 @@ fn main() -> ExitCode {
             Err(e) => fail(e),
         };
     }
-    if sym.is_none() && vs.is_none() && dbg.is_none() && json.is_none() {
+    if sym.is_none() && vs.is_none() && dbg.is_none() && json.is_none() && !options.verbose {
         return match vma::build_full(&source, &options, &files) {
             Ok(built) => prg_path
                 .map_or(Ok(()), |p| write(p, &built.prg))
@@ -258,6 +269,9 @@ fn main() -> ExitCode {
     match vma::build_result(&source, &options, &files, &source_path, line_map.as_deref()) {
         Ok(result) => {
             let answer = json.as_ref().map(|_| result.to_json().to_string()).unwrap_or_default();
+            for line in &result.log {
+                println!("{line}");
+            }
             if let Err(code) = write_media(&result.built.prg, result.built.sys_address) {
                 return code;
             }
