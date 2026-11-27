@@ -1,6 +1,6 @@
 # VMA — Visual Macro Assembler
 
-**Nyelvi kézikönyv · 2.4.0-s verzió**
+**Nyelvi kézikönyv · 2.5.0-s verzió**
 
 A VMA a [C64 Visual Assembler](https://github.com/zstarczali/VisualAssembler) 6502 / 6510 assemblere — az Expert mód
 nyelve, és az a szöveg, amiként a blokkprogramok leíródnak. Ez a kézikönyv a nyelvet írja le; a szerkesztő, a
@@ -2892,6 +2892,7 @@ vma --version
 | `--json FÁJL` | A build JSON-ként: PRG, SYS cím, szimbólumok, elrendezett sorok, kiírt szegmensek, memórianézet — vagy minden hiba a sorával |
 | `--source-path NÉV` | A `.dbg`-ben megnevezett fő forrás (alapból a bemenet) |
 | `--line-map FÁJL` | JSON tömb: bemeneti sor → a `.dbg`-ben megnevezett sor |
+| `-v`, `--verbose` | Fordítási jelentés a standard kimenetre: a forrás sorai és a beemelt fájlok, a szimbólumok, konstansok, makrók és define-ok száma, a feltételes fordítás kihagyott sorai, a BASIC stub, a belépési pont, minden szegmens tartománya és mérete, a halasztott írások, valamint a PRG mérete és betöltési címe (`--json` mellett `log` néven is) |
 | `--analyze FÁJL` | A `--json` válasza és a listing: minden sor címe, mérete, fajtája, bájtjai és hibája, a címkék — sikertelen fordításnál is *(2.3)* |
 
 Kilépési kód: `0` lefordult, `1` fordítási hiba (`FÁJL:SOR: üzenet` a standard hibakimeneten, soronként egy hiba),
@@ -2900,6 +2901,7 @@ Kilépési kód: `0` lefordult, `1` fordítási hiba (`FÁJL:SOR: üzenet` a sta
 ```
 vma build game.asm -o game.prg --debug
 vma build game.asm --no-basic-stub --search ../assets
+vma build game.asm -v                                # fordítási jelentéssel
 vma build game.asm --crt game.crt                    # csak a cartridge
 vma build game.asm --d64 --add music.prg             # game.d64 a GAME és MUSIC fájlokkal
 ```

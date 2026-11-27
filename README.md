@@ -27,7 +27,13 @@
 </p>
 <!-- badges:end -->
 
-Version 2.4.0.
+Version 2.5.0.
+
+2.5.0: `vma build -v` (`--verbose`) prints a build report: the source's lines and included files, the number of
+symbols, constants, macros and defines, the lines left out by conditional assembly, the BASIC stub, the entry, every
+written segment with its range and size, the deferred writes and the PRG's size and load address. In the library
+`BuildOptions::verbose` fills `BuildResult::log`, which the JSON answer (`--json`, the app's `vma_build`) carries
+as `log`.
 
 2.4.0: a block program is a `.vas` file (formerly `.json`): `.include "macros"` looks for `macros.vas`, and
 when a `.vas` or `.json` file is not found, the same name with the other extension is tried, so older projects keep
@@ -76,6 +82,7 @@ cargo build --release
 target/release/vma build game.asm -o game.prg
 target/release/vma build game.asm --debug          # game.prg + .sym / .vs / .dbg
 target/release/vma build game.asm --no-basic-stub  # no 10 SYS line
+target/release/vma build game.asm -v               # with a build report
 target/release/vma build game.asm --crt game.crt   # Magic Desk cartridge
 target/release/vma build game.asm --d64 --add music.prg  # 1541 disk image, no c1541 needed
 target/release/vma --help
@@ -92,7 +99,8 @@ let prg = vma::build_with_files(&source, &vma::BuildOptions::default(), &vma::Di
 
 `build_result` adds what the app reads besides the PRG: the debugger files, the symbols, the
 laid-out lines, the written segments and the memory view; errors carry the app's translation key
-(`CompileError::key` / `params`).
+(`CompileError::key` / `params`). With `BuildOptions { verbose: true, .. }` it also writes the build report
+(`BuildResult::log`, the same lines as `vma build -v`).
 
 ## Tests
 

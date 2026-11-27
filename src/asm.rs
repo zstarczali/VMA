@@ -252,6 +252,11 @@ impl Assembler {
         Assembler { consts, defines, macros: user_macros(program), labels: Labels::default(), anon: Vec::new(), pending: Vec::new() }
     }
 
+    /// The build report's numbers: (constants, user macros, defined symbols).
+    pub fn counts(&self) -> (usize, usize, usize) {
+        (self.consts.len(), self.macros.len(), self.defines.len())
+    }
+
     /// `resolveProgramConstValue`
     fn const_value(&self, name: &str) -> Option<f64> {
         let target = name.trim().trim_start_matches('#');
